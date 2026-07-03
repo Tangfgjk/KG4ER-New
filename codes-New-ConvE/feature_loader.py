@@ -1,0 +1,273 @@
+"""Feature loading utilities for SemanticConvE.
+
+The loader aligns semantic and pedagogical side features with the entity and
+relation ids used by the existing KG4ER graph files.
+"""
+
+from __future__ import annotations
+
+import json
+import math
+import re
+from dataclasses import dataclass
+from pathlib import Path
+from typing import Any, Dict, Iterable, List, Optional, Tuple
+
+import numpy as np
+import torch
+
+
+ENTITY_TYPE_TO_ID = {"uid": 0, "kc": 1, "ex": 2, "other": 3}
+RELATION_TYPE_TO_ID = {"rec": 0, "mlkc": 1, "pkc": 2, "exfr": 3, "other": 4}
+NO_CLUSTER_ID = 5
+
+
+@dataclass
+class SemanticFeatureBundle:
+    entity2id: Dict[str, int]
+    relation2id: Dict[str, int]
+    id2entity: Dict[int, str]
+    id2relation: Dict[int, str]
+    text_features: torch.Tensor
+    numeric_features: torch.Tensor
+    entity_type_ids: torch.Tensor
+    cluster_ids: torch.Tensor
+    relation_type_ids: torch.Tensor
+    relation_strengths: torch.Tensor
+    exercise_entity_ids: torch.Tensor
+    metadata: Dict[str, Any]
+
+    @property
+    def nentity(self) -> int:
+        return len(self.entity2id)
+
+    @property
+    def nrelation(self) -> int:
+        return len(self.relation2id)
+
+    @property
+    def text_dim(self) -> int:
+        return int(self.text_features.shape[1])
+
+    @property
+    def numeric_dim(self) -> int:
+        return int(self.numeric_features.shape[1])
+
+
+def read_json(path: Path) -> Any:
+    return json.loads(path.read_text(encoding="utf-8"))
+
+
+def read_dict(path: Path) -> Dict[str, int]:
+    result: Dict[str, int] = {}
+    with path.open("r", encoding="utf-8") as fp:
+        for line in fp:
+            line = line.strip()
+            if not line:
+                continue
+            idx, name = line.split("\t")
+            result[name] = int(idx)
+    return result
+
+
+def entity_kind(entity_name: str) -> str:
+    if entity_name.startswith("uid"):
+        return "uid"
+    if entity_name.startswith("kc"):
+        return "kc"
+    if entity_name.startswith("ex"):
+        return "ex"
+    return "other"
+
+
+def relation_kind(relation_name: str) -> str:
+    if relation_name == "rec":
+        return "rec"
+    if relation_name.startswith("mlkc"):
+        return "mlkc"
+    if relation_name.startswith("pkc"):
+        return "pkc"
+    if relation_name.startswith("exfr"):
+        return "exfr"
+    return "other"
+
+
+def relation_strength(relation_name: str) -> float:
+    if relation_name == "rec":
+        return 1.0
+    match = re.search(r"[-+]?\d*\.?\d+", relation_name)
+    if not match:
+        return 0.0
+    value = float(match.group(0))
+    if not math.isfinite(value):
+        return 0.0
+    return max(0.0, min(1.0, value))
+
+
+def locate_feature_dir(data_path: Path, feature_dir: Optional[Path] = None) -> Path:
+    if feature_dir is not None:
+        return Path(feature_dir)
+    candidate = data_path / "semantic_kg_features"
+    if candidate.exists():
+        return candidate
+    prepared_candidate = data_path / "prepared_for_kt" / "semantic_kg_features"
+    if prepared_candidate.exists():
+        return prepared_candidate
+    raise FileNotFoundError(f"semantic_kg_features not found under {data_path}")
+
+
+def _as_float(value: Any, default: float = 0.0) -> float:
+    try:
+        number = float(value)
+    except Exception:
+        return default
+    if not math.isfinite(number):
+        return default
+    return number
+
+
+def _log_count(value: Any) -> float:
+    return math.log1p(max(0.0, _as_float(value, 0.0)))
+
+
+def _load_text_embeddings(feature_dir: Path) -> tuple[Dict[str, np.ndarray], int, Dict[str, Any]]:
+    emb_dir = feature_dir / "text_embeddings"
+    manifest_path = emb_dir / "text_embedding_manifest.json"
+    if not manifest_path.exists():
+        raise FileNotFoundError(
+            f"Missing {manifest_path}. Run semantic_features/build_text_embeddings.py first."
+        )
+    manifest = read_json(manifest_path)
+    concept_embeddings = np.load(emb_dir / manifest["files"]["concept_text_embeddings"])
+    exercise_embeddings = np.load(emb_dir / manifest["files"]["exercise_text_embeddings"])
+    text_by_entity: Dict[str, np.ndarray] = {}
+    for entity_id, emb in zip(manifest.get("concept_entity_ids", []), concept_embeddings):
+        text_by_entity[entity_id] = np.asarray(emb, dtype=np.float32)
+    for entity_id, emb in zip(manifest.get("exercise_entity_ids", []), exercise_embeddings):
+        text_by_entity[entity_id] = np.asarray(emb, dtype=np.float32)
+    text_dim = int(manifest.get("embedding_dim") or 0)
+    if text_dim <= 0 and text_by_entity:
+        text_dim = int(next(iter(text_by_entity.values())).shape[0])
+    return text_by_entity, text_dim, manifest
+
+
+def _learner_numeric(item: Dict[str, Any]) -> List[float]:
+    return [
+        _as_float(item.get("theta_norm"), 0.5),
+        _as_float(item.get("overall_mastery_irt"), 0.5),
+        _as_float(item.get("overall_mastery_kt_mean"), 0.0),
+        _as_float(item.get("correct_rate"), 0.0),
+        _log_count(item.get("history_length")),
+        _as_float(item.get("concept_mastery_mean"), 0.5),
+        _as_float(item.get("concept_mastery_std"), 0.0),
+    ]
+
+
+def _exercise_numeric(item: Dict[str, Any]) -> List[float]:
+    return [
+        _as_float(item.get("difficulty_norm"), 0.5),
+        _as_float(item.get("discrimination_norm"), 0.0),
+        _as_float(item.get("correct_rate"), 0.0),
+        _log_count(item.get("interaction_count")),
+        0.0,
+        0.0,
+        0.0,
+    ]
+
+
+def _concept_numeric() -> List[float]:
+    return [0.0] * 7
+
+
+def load_semantic_feature_bundle(
+    data_path: str | Path,
+    feature_dir: str | Path | None = None,
+    device: str | torch.device = "cpu",
+) -> SemanticFeatureBundle:
+    data_path = Path(data_path)
+    feature_dir_path = locate_feature_dir(data_path, Path(feature_dir) if feature_dir else None)
+    entity2id = read_dict(data_path / "entities.dict")
+    relation2id = read_dict(data_path / "relations.dict")
+    id2entity = {idx: name for name, idx in entity2id.items()}
+    id2relation = {idx: name for name, idx in relation2id.items()}
+
+    text_by_entity, text_dim, text_manifest = _load_text_embeddings(feature_dir_path)
+    entity_dir = feature_dir_path / "entity_features"
+    irt_dir = feature_dir_path / "irt_features"
+    learner_data = read_json(entity_dir / "learner_pedagogy.json").get("learners", {})
+    exercise_irt = read_json(irt_dir / "exercise_irt_features.json").get("exercises", {})
+
+    nentity = len(entity2id)
+    text_array = np.zeros((nentity, text_dim), dtype=np.float32)
+    numeric_array = np.zeros((nentity, 7), dtype=np.float32)
+    type_array = np.zeros((nentity,), dtype=np.int64)
+    cluster_array = np.full((nentity,), NO_CLUSTER_ID, dtype=np.int64)
+
+    for entity_name, entity_id in entity2id.items():
+        kind = entity_kind(entity_name)
+        type_array[entity_id] = ENTITY_TYPE_TO_ID.get(kind, ENTITY_TYPE_TO_ID["other"])
+        if entity_name in text_by_entity:
+            text_array[entity_id] = text_by_entity[entity_name]
+        if kind == "uid":
+            item = learner_data.get(entity_name, {})
+            numeric_array[entity_id] = np.asarray(_learner_numeric(item), dtype=np.float32)
+            cluster_array[entity_id] = int(item.get("cluster_id", NO_CLUSTER_ID))
+        elif kind == "ex":
+            numeric_array[entity_id] = np.asarray(_exercise_numeric(exercise_irt.get(entity_name, {})), dtype=np.float32)
+        elif kind == "kc":
+            numeric_array[entity_id] = np.asarray(_concept_numeric(), dtype=np.float32)
+
+    nrelation = len(relation2id)
+    relation_type_array = np.zeros((nrelation,), dtype=np.int64)
+    relation_strength_array = np.zeros((nrelation, 1), dtype=np.float32)
+    for relation_name, relation_id in relation2id.items():
+        kind = relation_kind(relation_name)
+        relation_type_array[relation_id] = RELATION_TYPE_TO_ID.get(kind, RELATION_TYPE_TO_ID["other"])
+        relation_strength_array[relation_id, 0] = relation_strength(relation_name)
+
+    exercise_ids = sorted(
+        entity_id for name, entity_id in entity2id.items() if entity_kind(name) == "ex"
+    )
+
+    return SemanticFeatureBundle(
+        entity2id=entity2id,
+        relation2id=relation2id,
+        id2entity=id2entity,
+        id2relation=id2relation,
+        text_features=torch.tensor(text_array, dtype=torch.float32, device=device),
+        numeric_features=torch.tensor(numeric_array, dtype=torch.float32, device=device),
+        entity_type_ids=torch.tensor(type_array, dtype=torch.long, device=device),
+        cluster_ids=torch.tensor(cluster_array, dtype=torch.long, device=device),
+        relation_type_ids=torch.tensor(relation_type_array, dtype=torch.long, device=device),
+        relation_strengths=torch.tensor(relation_strength_array, dtype=torch.float32, device=device),
+        exercise_entity_ids=torch.tensor(exercise_ids, dtype=torch.long, device=device),
+        metadata={
+            "data_path": str(data_path),
+            "feature_dir": str(feature_dir_path),
+            "text_manifest": text_manifest,
+            "numeric_feature_names": [
+                "theta_or_difficulty_norm",
+                "irt_mastery_or_discrimination_norm",
+                "kt_mastery_mean_or_correct_rate",
+                "correct_rate_or_log_interaction_count",
+                "log_history_length",
+                "concept_mastery_mean",
+                "concept_mastery_std",
+            ],
+            "entity_type_to_id": ENTITY_TYPE_TO_ID,
+            "relation_type_to_id": RELATION_TYPE_TO_ID,
+            "no_cluster_id": NO_CLUSTER_ID,
+        },
+    )
+
+
+def read_triples(path: Path, entity2id: Dict[str, int], relation2id: Dict[str, int]) -> List[Tuple[int, int, int]]:
+    triples: List[Tuple[int, int, int]] = []
+    with path.open("r", encoding="utf-8") as fp:
+        for line in fp:
+            line = line.strip()
+            if not line:
+                continue
+            h, r, t = line.split("\t")
+            triples.append((entity2id[h], relation2id[r], entity2id[t]))
+    return triples

@@ -1,0 +1,32 @@
+# Data and generated artifacts are intentionally excluded.
+data/
+runs/
+ablation_data/
+semantic_features/
+
+# Model checkpoints and exported embeddings.
+*.pt
+*.pth
+*.ckpt
+*.npy
+*.pkl
+
+# Python caches and local environments.
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.venv/
+venv/
+
+# Logs and temporary outputs.
+*.log
+tmp/
+temp/
+
+# IDE and OS metadata.
+.idea/
+.vscode/
+.DS_Store
+Thumbs.db
