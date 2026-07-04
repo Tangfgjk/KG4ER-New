@@ -325,7 +325,24 @@ def main() -> None:
         logging.info("epoch=%s/%s loss=%.8f best_epoch=%s best_loss=%.8f", epoch + 1, args.epochs, avg_loss, best_epoch, best_loss)
 
     training_seconds = time.perf_counter() - training_start
+    if best_path.exists():
+        best_checkpoint = torch.load(best_path, map_location=device)
+        model.load_state_dict(best_checkpoint["model_state_dict"])
     export_embeddings(model, args.save_path, bundle.nentity, bundle.nrelation, device)
+    write_json(
+        args.save_path / "gate_values.json",
+        {
+            "model": "SemanticConvE",
+            "model_version": MODEL_VERSION,
+            "dataset": args.dataset_name,
+            "seed": args.seed,
+            "ablation": args.ablation,
+            "checkpoint": "best.pt" if best_path.exists() else "last.pt",
+            "entity_fusion": "type-aware gated semantic-pedagogical fusion",
+            "semantic_quality": "enabled",
+            "gate_values": model.gate_values(),
+        },
+    )
     write_json(
         args.save_path / "metrics.json",
         {
@@ -348,6 +365,8 @@ def main() -> None:
             "text_embedding_model": bundle.metadata["text_manifest"].get("model"),
             "embedding_dim": args.embedding_dim,
             "relation_encoding": "continuous: relation type embedding + projected relation strength; no independent relation-id embedding",
+            "entity_fusion": "type-aware gated semantic-pedagogical fusion",
+            "semantic_quality": bundle.metadata.get("semantic_quality"),
         },
     )
     write_json(args.save_path / "config.json", jsonable(vars(args)))

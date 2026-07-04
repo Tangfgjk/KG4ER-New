@@ -2,6 +2,8 @@
 
 This document introduces the code uploaded to the `KG4ER-New` repository. The repository contains only the code required for SemanticConvE training, testing, evaluation, result summarization, and ablation experiments. Dataset files and generated results are intentionally excluded.
 
+Current code branch: **V3 gated fusion**.
+
 ## 1. Repository Structure
 
 ```text
@@ -30,8 +32,8 @@ KG4ER-New/
 
 | File | Purpose |
 | --- | --- |
-| `feature_loader.py` | Loads entity IDs, relation IDs, semantic text embeddings, pedagogical numeric features, entity types, learner clusters, relation types, and continuous relation strengths. |
-| `semantic_conve_model.py` | Defines SemanticConvE with semantic-aware entity encoding, pedagogical feature fusion, continuous relation-aware encoding, and type-aware tail scoring. |
+| `feature_loader.py` | Loads entity IDs, relation IDs, semantic text embeddings, pedagogical numeric features, entity types, learner clusters, semantic-quality priors, relation types, and continuous relation strengths. |
+| `semantic_conve_model.py` | Defines SemanticConvE with type-aware gated semantic/pedagogical entity fusion, continuous relation-aware encoding, and type-aware tail scoring. |
 | `run_semantic_conve.py` | Trains one SemanticConvE model for one dataset, one seed, and one ablation setting. |
 | `test_semantic_conve.py` | Loads a trained checkpoint and exports learner-exercise recommendation scores. |
 | `run_semantic_experiments.py` | One-command runner: validation, training, testing, evaluation, logs, checkpointing, and resume. |
@@ -42,15 +44,15 @@ KG4ER-New/
 
 ## 3. Model Components
 
-SemanticConvE uses:
+SemanticConvE V3 uses:
 
 ```text
 entity representation =
 ID embedding
-+ text semantic embedding
-+ pedagogical numeric embedding
 + entity type embedding
-+ learner cluster embedding
++ gate_sem[type] * semantic_quality(entity) * text semantic embedding
++ gate_ped[type] * pedagogical numeric embedding
++ gate_cluster[type] * learner cluster embedding
 ```
 
 and:
@@ -67,7 +69,30 @@ At recommendation time, the model scores only exercise entities:
 score(uid, rec, exercise)
 ```
 
-## 4. Supported Ablations
+The gate values are learned during training and exported to:
+
+```text
+runs/{dataset}/{run_id}/SemanticConvE/seed{seed}/gate_values.json
+```
+
+The result summarizer also outputs:
+
+```text
+runs/{dataset}/{run_id}/summary/gate_values_per_seed.csv
+runs/{dataset}/{run_id}/summary/gate_values_mean_std.csv
+```
+
+## 4. V3 Changes Compared with V2
+
+| Area | V2 | V3 |
+| --- | --- | --- |
+| Entity fusion | Direct addition of ID, semantic, pedagogical, type, and cluster embeddings | Type-aware gated fusion after semantic/numeric projection |
+| Semantic reliability | All available text embeddings contributed equally | Each entity has a fixed `semantic_quality` prior based on semantic source |
+| Explainable diagnostics | Only recommendation explanations and metrics | Adds learned gate values for semantic, pedagogical, and cluster contributions |
+| Relation encoding | Continuous relation type + strength | Kept unchanged |
+| Recommendation scoring | `score(uid, rec, exercise)` over exercise tails | Kept unchanged |
+
+## 5. Supported Ablations
 
 The code supports:
 
@@ -99,7 +124,7 @@ The model-component ablations use the full graph and only disable model inputs:
 | `no_relation_strength` | continuous relation strength |
 | `id_only` | semantic, pedagogical, entity type, cluster, and relation strength components |
 
-## 5. Data Assumption
+## 6. Data Assumption
 
 The repository does not contain data. Copy prepared datasets into:
 
@@ -108,4 +133,3 @@ KG4ER-New/data/
 ```
 
 Each dataset should already contain KG graph files, KT outputs, IRT features, semantic features, and text embeddings. The validation script checks this before training.
-

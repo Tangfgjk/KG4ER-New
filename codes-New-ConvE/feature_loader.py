@@ -32,6 +32,7 @@ class SemanticFeatureBundle:
     numeric_features: torch.Tensor
     entity_type_ids: torch.Tensor
     cluster_ids: torch.Tensor
+    semantic_quality: torch.Tensor
     relation_type_ids: torch.Tensor
     relation_strengths: torch.Tensor
     exercise_entity_ids: torch.Tensor
@@ -126,6 +127,51 @@ def _as_float(value: Any, default: float = 0.0) -> float:
     return number
 
 
+def _clamp01(value: float) -> float:
+    return max(0.0, min(1.0, value))
+
+
+def infer_semantic_quality(feature: Dict[str, Any], entity_name: str) -> float:
+    """Infer a fixed prior for how reliable an entity's semantic text is.
+
+    The value is a non-trainable quality prior used by SemanticConvE V3 gates.
+    It does not measure correctness of a definition; it only encodes how much
+    we trust the semantic source before training.
+    """
+
+    if "semantic_quality" in feature:
+        return _clamp01(_as_float(feature.get("semantic_quality"), 0.0))
+
+    source = str(
+        feature.get("semantic_quality_source")
+        or feature.get("definition_source")
+        or feature.get("text_source")
+        or feature.get("semantic_source")
+        or ""
+    ).lower()
+    text = str(
+        feature.get("text_for_embedding")
+        or feature.get("question_text")
+        or feature.get("definition")
+        or feature.get("text")
+        or ""
+    ).strip()
+
+    if "template" in source:
+        return 0.0
+    if any(token in source for token in ["raw_text", "question_text", "exercise_text"]):
+        return 1.0
+    if any(token in source for token in ["llm", "deepseek", "definition"]):
+        return 0.8
+    if any(token in source for token in ["answer_type", "problem_id"]):
+        return 0.3
+    if any(token in source for token in ["structured", "problem", "hierarchy", "step"]):
+        return 0.5
+    if text:
+        return 0.5
+    return 0.0
+
+
 def _log_count(value: Any) -> float:
     return math.log1p(max(0.0, _as_float(value, 0.0)))
 
@@ -149,6 +195,26 @@ def _load_text_embeddings(feature_dir: Path) -> tuple[Dict[str, np.ndarray], int
     if text_dim <= 0 and text_by_entity:
         text_dim = int(next(iter(text_by_entity.values())).shape[0])
     return text_by_entity, text_dim, manifest
+
+
+def _load_semantic_metadata(feature_dir: Path) -> Dict[str, Dict[str, Any]]:
+    entity_dir = feature_dir / "entity_features"
+    metadata: Dict[str, Dict[str, Any]] = {}
+    for file_name, root_key in [
+        ("concept_semantics.json", "concepts"),
+        ("exercise_semantics.json", "exercises"),
+        ("learner_pedagogy.json", "learners"),
+    ]:
+        path = entity_dir / file_name
+        if not path.exists():
+            continue
+        payload = read_json(path)
+        entries = payload.get(root_key, {})
+        if isinstance(entries, dict):
+            for entity_id, item in entries.items():
+                if isinstance(item, dict):
+                    metadata[str(entity_id)] = item
+    return metadata
 
 
 def _learner_numeric(item: Dict[str, Any]) -> List[float]:
@@ -192,6 +258,7 @@ def load_semantic_feature_bundle(
     id2relation = {idx: name for name, idx in relation2id.items()}
 
     text_by_entity, text_dim, text_manifest = _load_text_embeddings(feature_dir_path)
+    semantic_metadata = _load_semantic_metadata(feature_dir_path)
     entity_dir = feature_dir_path / "entity_features"
     irt_dir = feature_dir_path / "irt_features"
     learner_data = read_json(entity_dir / "learner_pedagogy.json").get("learners", {})
@@ -202,12 +269,17 @@ def load_semantic_feature_bundle(
     numeric_array = np.zeros((nentity, 7), dtype=np.float32)
     type_array = np.zeros((nentity,), dtype=np.int64)
     cluster_array = np.full((nentity,), NO_CLUSTER_ID, dtype=np.int64)
+    semantic_quality_array = np.zeros((nentity, 1), dtype=np.float32)
 
     for entity_name, entity_id in entity2id.items():
         kind = entity_kind(entity_name)
         type_array[entity_id] = ENTITY_TYPE_TO_ID.get(kind, ENTITY_TYPE_TO_ID["other"])
+        feature_item = semantic_metadata.get(entity_name, {})
         if entity_name in text_by_entity:
             text_array[entity_id] = text_by_entity[entity_name]
+            if not feature_item:
+                feature_item = {"text_for_embedding": "available_text_embedding"}
+        semantic_quality_array[entity_id, 0] = infer_semantic_quality(feature_item, entity_name)
         if kind == "uid":
             item = learner_data.get(entity_name, {})
             numeric_array[entity_id] = np.asarray(_learner_numeric(item), dtype=np.float32)
@@ -238,6 +310,7 @@ def load_semantic_feature_bundle(
         numeric_features=torch.tensor(numeric_array, dtype=torch.float32, device=device),
         entity_type_ids=torch.tensor(type_array, dtype=torch.long, device=device),
         cluster_ids=torch.tensor(cluster_array, dtype=torch.long, device=device),
+        semantic_quality=torch.tensor(semantic_quality_array, dtype=torch.float32, device=device),
         relation_type_ids=torch.tensor(relation_type_array, dtype=torch.long, device=device),
         relation_strengths=torch.tensor(relation_strength_array, dtype=torch.float32, device=device),
         exercise_entity_ids=torch.tensor(exercise_ids, dtype=torch.long, device=device),
@@ -257,6 +330,11 @@ def load_semantic_feature_bundle(
             "entity_type_to_id": ENTITY_TYPE_TO_ID,
             "relation_type_to_id": RELATION_TYPE_TO_ID,
             "no_cluster_id": NO_CLUSTER_ID,
+            "semantic_quality": {
+                "enabled": True,
+                "mean": float(np.mean(semantic_quality_array)) if semantic_quality_array.size else 0.0,
+                "nonzero_count": int(np.count_nonzero(semantic_quality_array)),
+            },
         },
     )
 

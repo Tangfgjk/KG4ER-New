@@ -91,6 +91,64 @@ def collect_seed(run_dir: Path, seed: int, top_ks: List[int], ablation: str = "f
     return row
 
 
+def collect_gate_rows(run_dir: Path, seeds: List[int], ablations: List[str]) -> List[Dict[str, Any]]:
+    rows: List[Dict[str, Any]] = []
+    for ablation in ablations:
+        model_name = ablation_model_dir(ablation)
+        for seed in seeds:
+            seed_dir = run_dir / model_name / f"seed{seed}"
+            gate_payload = maybe_read_json(seed_dir / "gate_values.json")
+            gate_values = gate_payload.get("gate_values", {})
+            if not isinstance(gate_values, dict):
+                continue
+            for entity_type, feature_values in gate_values.items():
+                if not isinstance(feature_values, dict):
+                    continue
+                for feature_type, value in feature_values.items():
+                    try:
+                        gate_value = float(value)
+                    except Exception:
+                        continue
+                    rows.append(
+                        {
+                            "ablation": ablation,
+                            "model": model_name,
+                            "seed": seed,
+                            "seed_dir": str(seed_dir),
+                            "entity_type": entity_type,
+                            "feature_type": feature_type,
+                            "gate_value": gate_value,
+                        }
+                    )
+    return rows
+
+
+def summarize_gate_rows(rows: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    grouped: Dict[tuple[str, str, str, str], List[float]] = {}
+    for row in rows:
+        key = (
+            str(row["ablation"]),
+            str(row["model"]),
+            str(row["entity_type"]),
+            str(row["feature_type"]),
+        )
+        grouped.setdefault(key, []).append(float(row["gate_value"]))
+    summaries = []
+    for (ablation, model, entity_type, feature_type), values in sorted(grouped.items()):
+        summaries.append(
+            {
+                "ablation": ablation,
+                "model": model,
+                "entity_type": entity_type,
+                "feature_type": feature_type,
+                "runs": len(values),
+                "mean": sum(values) / len(values),
+                "std": sample_std(values),
+            }
+        )
+    return summaries
+
+
 def summarize_rows(rows: List[Dict[str, Any]], top_ks: List[int]) -> Dict[str, Any]:
     fields = [f"ACC@{k}" for k in top_ks] + ["ACC-Avg"] + [f"NOV@{k}" for k in top_ks] + ["NOV-Avg", "Ep_sim@10", "training_seconds", "inference_seconds"]
     summary: Dict[str, Any] = {"runs": len(rows)}
@@ -224,6 +282,20 @@ def main() -> None:
     fields = ["ablation", "model", "seed", "seed_dir"] + [f"ACC@{k}" for k in top_ks] + ["ACC-Avg"] + [f"NOV@{k}" for k in top_ks] + ["NOV-Avg", "Ep_sim@10", "training_seconds", "inference_seconds"]
     write_csv(output_dir / "per_seed_metrics.csv", rows, fields)
 
+    gate_rows = collect_gate_rows(run_dir, seeds, ablations)
+    gate_summary_rows = summarize_gate_rows(gate_rows)
+    if gate_rows:
+        write_csv(
+            output_dir / "gate_values_per_seed.csv",
+            gate_rows,
+            ["ablation", "model", "seed", "seed_dir", "entity_type", "feature_type", "gate_value"],
+        )
+        write_csv(
+            output_dir / "gate_values_mean_std.csv",
+            gate_summary_rows,
+            ["ablation", "model", "entity_type", "feature_type", "runs", "mean", "std"],
+        )
+
     summary_rows = []
     for ablation, summary in summaries.items():
         for key, value in summary.items():
@@ -238,7 +310,17 @@ def main() -> None:
                     }
                 )
     write_csv(output_dir / "mean_std_metrics.csv", summary_rows, ["ablation", "model", "metric", "mean", "std"])
-    write_json(output_dir / "summary.json", {"dataset": args.dataset, "run_id": args.run_id, "missing_seeds": missing, "summaries": summaries, "rows": rows})
+    write_json(
+        output_dir / "summary.json",
+        {
+            "dataset": args.dataset,
+            "run_id": args.run_id,
+            "missing_seeds": missing,
+            "summaries": summaries,
+            "rows": rows,
+            "gate_summaries": gate_summary_rows,
+        },
+    )
     write_paper_table(output_dir / "paper_table.md", args.dataset, summaries, top_ks)
     write_paper_table_csv(output_dir / "paper_table.csv", args.dataset, summaries)
     print(f"summary written to {output_dir}")

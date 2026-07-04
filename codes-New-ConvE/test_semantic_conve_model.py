@@ -6,7 +6,7 @@ import unittest
 
 import torch
 
-from feature_loader import RELATION_TYPE_TO_ID
+from feature_loader import ENTITY_TYPE_TO_ID, RELATION_TYPE_TO_ID
 from semantic_conve_model import SemanticConvE
 
 
@@ -35,6 +35,7 @@ class SemanticConvERelationEncodingTest(unittest.TestCase):
             cluster_ids=torch.zeros(nentity, dtype=torch.long),
             text_features=torch.zeros((nentity, text_dim), dtype=torch.float32),
             numeric_features=torch.zeros((nentity, numeric_dim), dtype=torch.float32),
+            semantic_quality=torch.ones((nentity, 1), dtype=torch.float32),
             embedding_dim=20,
             embedding_shape1=4,
             hidden_size=144,
@@ -81,6 +82,43 @@ class SemanticConvERelationEncodingTest(unittest.TestCase):
         self.assertTrue(
             torch.allclose(model_a.entity_embedding(entity_ids), model_b.entity_embedding(entity_ids), atol=1e-6),
             "no_semantic should make entity embeddings independent from text features",
+        )
+
+    def test_gate_values_are_type_level_and_start_at_half(self) -> None:
+        model = self.build_model()
+
+        gate_values = model.gate_values()
+
+        self.assertEqual(set(gate_values), set(ENTITY_TYPE_TO_ID))
+        for values in gate_values.values():
+            self.assertAlmostEqual(values["semantic"], 0.5, places=6)
+            self.assertAlmostEqual(values["pedagogical"], 0.5, places=6)
+            self.assertAlmostEqual(values["cluster"], 0.5, places=6)
+
+    def test_semantic_quality_scales_semantic_contribution(self) -> None:
+        model = self.build_model()
+        with torch.no_grad():
+            model.emb_e.weight.zero_()
+            model.entity_type_emb.weight.zero_()
+            model.cluster_emb.weight.zero_()
+            for layer in model.numeric_projector:
+                if hasattr(layer, "weight"):
+                    layer.weight.zero_()
+                if hasattr(layer, "bias") and layer.bias is not None:
+                    layer.bias.zero_()
+            model.text_projector.weight.zero_()
+            model.text_projector.weight[0, 0] = 1.0
+            model.text_projector.weight[1, 1] = 2.0
+            model.text_features[0] = torch.tensor([1.0, 1.0, 0.0, 0.0])
+            model.text_features[1] = torch.tensor([1.0, 1.0, 0.0, 0.0])
+            model.semantic_quality[0, 0] = 0.0
+            model.semantic_quality[1, 0] = 1.0
+
+        embeddings = model.entity_embedding(torch.tensor([0, 1], dtype=torch.long))
+
+        self.assertFalse(
+            torch.allclose(embeddings[0], embeddings[1], atol=1e-6),
+            "semantic_quality should reduce or preserve the semantic contribution per entity",
         )
 
 
