@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import unittest
 
-from feature_loader import infer_semantic_quality
+from feature_loader import _log_count, infer_semantic_quality
 
 
 class SemanticQualityInferenceTest(unittest.TestCase):
@@ -30,6 +30,11 @@ class SemanticQualityInferenceTest(unittest.TestCase):
             infer_semantic_quality({"text_for_embedding": "Problem: linear equation"}, "ex3"),
             0.5,
         )
+
+    def test_count_feature_is_scaled_to_unit_range(self) -> None:
+        self.assertEqual(_log_count(0), 0.0)
+        self.assertGreater(_log_count(10), 0.0)
+        self.assertLessEqual(_log_count(1_000_000), 1.0)
 
 
 if __name__ == "__main__":

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import math
 from typing import Optional
 
 import torch
@@ -22,6 +23,13 @@ VALID_MODEL_ABLATIONS = {
     "no_relation_strength",
     "id_only",
 }
+
+GATE_INITIAL_VALUE = 0.1
+
+
+def _gate_logit(value: float = GATE_INITIAL_VALUE) -> float:
+    value = min(max(value, 1e-6), 1.0 - 1e-6)
+    return math.log(value / (1.0 - value))
 
 
 class SemanticConvE(nn.Module):
@@ -75,9 +83,10 @@ class SemanticConvE(nn.Module):
         self.entity_type_emb = nn.Embedding(4, embedding_dim)
         self.cluster_emb = nn.Embedding(NO_CLUSTER_ID + 1, embedding_dim)
         self.relation_type_emb = nn.Embedding(len(RELATION_TYPE_TO_ID), embedding_dim)
-        self.raw_semantic_gate = nn.Parameter(torch.zeros(len(ENTITY_TYPE_TO_ID)))
-        self.raw_pedagogical_gate = nn.Parameter(torch.zeros(len(ENTITY_TYPE_TO_ID)))
-        self.raw_cluster_gate = nn.Parameter(torch.zeros(len(ENTITY_TYPE_TO_ID)))
+        gate_init = torch.full((len(ENTITY_TYPE_TO_ID),), _gate_logit(), dtype=torch.float32)
+        self.raw_semantic_gate = nn.Parameter(gate_init.clone())
+        self.raw_pedagogical_gate = nn.Parameter(gate_init.clone())
+        self.raw_cluster_gate = nn.Parameter(gate_init.clone())
 
         self.text_projector = nn.Linear(text_dim, embedding_dim, bias=False)
         self.numeric_projector = nn.Sequential(
@@ -158,7 +167,10 @@ class SemanticConvE(nn.Module):
         else:
             pedagogical_emb = self.numeric_projector(self.numeric_features[entity_ids])
             pedagogical_gate = torch.sigmoid(self.raw_pedagogical_gate[type_ids]).unsqueeze(-1)
-            pedagogical_emb = pedagogical_gate * pedagogical_emb
+            pedagogical_mask = (
+                (type_ids == ENTITY_TYPE_TO_ID["uid"]) | (type_ids == ENTITY_TYPE_TO_ID["ex"])
+            ).float().unsqueeze(-1)
+            pedagogical_emb = pedagogical_mask * pedagogical_gate * pedagogical_emb
 
         type_emb = self.entity_type_emb(type_ids)
         if self.ablation_mode == "no_pedagogical":
@@ -166,7 +178,8 @@ class SemanticConvE(nn.Module):
         else:
             cluster_emb = self.cluster_emb(self.cluster_ids[entity_ids].clamp(min=0, max=NO_CLUSTER_ID))
             cluster_gate = torch.sigmoid(self.raw_cluster_gate[type_ids]).unsqueeze(-1)
-            cluster_emb = cluster_gate * cluster_emb
+            cluster_mask = (type_ids == ENTITY_TYPE_TO_ID["uid"]).float().unsqueeze(-1)
+            cluster_emb = cluster_mask * cluster_gate * cluster_emb
         return self.entity_norm(id_emb + semantic_emb + pedagogical_emb + type_emb + cluster_emb)
 
     def gate_values(self) -> dict[str, dict[str, float]]:

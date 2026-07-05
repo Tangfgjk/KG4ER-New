@@ -1,6 +1,6 @@
 # KG4ER-New Run Commands
 
-This document explains how to run **SemanticConvE V3 gated fusion** and its ablation experiments after cloning the `KG4ER-New` repository on a new computer.
+This document explains how to run **SemanticConvE V3.1 masked gated fusion** and its ablation experiments after cloning the `KG4ER-New` repository on a new computer.
 
 ## 1. Install Environment
 
@@ -69,7 +69,7 @@ Example for one dataset:
 ```powershell
 python codes-New-ConvE\run_semantic_experiments.py `
   --dataset algebra2005 `
-  --run-id algebra2005_semantic_conve_v3_gated_fusion_5seeds `
+  --run-id algebra2005_semantic_conve_v31_masked_gated_fusion_5seeds `
   --seeds 2024,2025,2026,2027,2028 `
   --epochs 25 `
   --bs 1024 `
@@ -82,7 +82,7 @@ Resume:
 ```powershell
 python codes-New-ConvE\run_semantic_experiments.py `
   --dataset algebra2005 `
-  --run-id algebra2005_semantic_conve_v3_gated_fusion_5seeds `
+  --run-id algebra2005_semantic_conve_v31_masked_gated_fusion_5seeds `
   --seeds 2024,2025,2026,2027,2028 `
   --epochs 25 `
   --bs 1024 `
@@ -96,7 +96,7 @@ python codes-New-ConvE\run_semantic_experiments.py `
 ```powershell
 python codes-New-ConvE\run_semantic_experiments.py `
   --dataset algebra2005 `
-  --run-id algebra2005_semantic_ablation_v3_gated_fusion_5seeds `
+  --run-id algebra2005_semantic_ablation_v31_masked_gated_fusion_5seeds `
   --seeds 2024,2025,2026,2027,2028 `
   --ablations full,no_mastery,no_forgetting,no_seq,no_semantic,no_pedagogical,no_relation_strength,id_only `
   --epochs 25 `
@@ -110,7 +110,7 @@ Resume ablations:
 ```powershell
 python codes-New-ConvE\run_semantic_experiments.py `
   --dataset algebra2005 `
-  --run-id algebra2005_semantic_ablation_v3_gated_fusion_5seeds `
+  --run-id algebra2005_semantic_ablation_v31_masked_gated_fusion_5seeds `
   --seeds 2024,2025,2026,2027,2028 `
   --ablations full,no_mastery,no_forgetting,no_seq,no_semantic,no_pedagogical,no_relation_strength,id_only `
   --epochs 25 `
@@ -127,7 +127,7 @@ Full model:
 ```powershell
 python codes-New-ConvE\summarize_semantic_results.py `
   --dataset algebra2005 `
-  --run-id algebra2005_semantic_conve_v3_gated_fusion_5seeds `
+  --run-id algebra2005_semantic_conve_v31_masked_gated_fusion_5seeds `
   --seeds 2024,2025,2026,2027,2028
 ```
 
@@ -136,7 +136,7 @@ Ablation results:
 ```powershell
 python codes-New-ConvE\summarize_semantic_results.py `
   --dataset algebra2005 `
-  --run-id algebra2005_semantic_ablation_v3_gated_fusion_5seeds `
+  --run-id algebra2005_semantic_ablation_v31_masked_gated_fusion_5seeds `
   --seeds 2024,2025,2026,2027,2028 `
   --ablations full,no_mastery,no_forgetting,no_seq,no_semantic,no_pedagogical,no_relation_strength,id_only
 ```
@@ -147,7 +147,7 @@ Summary outputs are saved under:
 runs/{dataset}/{run_id}/summary/
 ```
 
-V3 additionally writes gate diagnostics:
+V3.1 additionally writes gate diagnostics:
 
 ```text
 runs/{dataset}/{run_id}/SemanticConvE/seed{seed}/gate_values.json

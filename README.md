@@ -2,7 +2,7 @@
 
 This repository contains the portable training, testing, evaluation, and ablation code for the SemanticConvE exercise recommendation model.
 
-Current version: **V3 gated fusion**. Compared with V2, V3 adds semantic-quality priors and learnable type-aware gates for semantic, pedagogical, and learner-cluster feature fusion while keeping the existing recommendation scoring flow unchanged.
+Current version: **V3.1 masked gated fusion**. Compared with V3, V3.1 keeps semantic-quality priors and learnable type-aware gates, but adds stricter type masks so learner-cluster features only affect learner entities and pedagogical numeric features only affect learner/exercise entities. It also scales count features into `[0, 1]` and initializes auxiliary-feature gates conservatively.
 
 Data files are not included. To run experiments on a new computer, clone this repository and copy the prepared dataset folders into:
 

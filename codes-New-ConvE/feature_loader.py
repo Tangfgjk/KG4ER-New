@@ -173,7 +173,10 @@ def infer_semantic_quality(feature: Dict[str, Any], entity_name: str) -> float:
 
 
 def _log_count(value: Any) -> float:
-    return math.log1p(max(0.0, _as_float(value, 0.0)))
+    # Interaction counts can be thousands or more, while the other pedagogical
+    # features are already in [0, 1]. Keep the count signal without letting it
+    # dominate the numeric projector.
+    return _clamp01(math.log1p(max(0.0, _as_float(value, 0.0))) / 10.0)
 
 
 def _load_text_embeddings(feature_dir: Path) -> tuple[Dict[str, np.ndarray], int, Dict[str, Any]]:

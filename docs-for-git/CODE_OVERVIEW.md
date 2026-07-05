@@ -2,7 +2,7 @@
 
 This document introduces the code uploaded to the `KG4ER-New` repository. The repository contains only the code required for SemanticConvE training, testing, evaluation, result summarization, and ablation experiments. Dataset files and generated results are intentionally excluded.
 
-Current code branch: **V3 gated fusion**.
+Current code branch: **V3.1 masked gated fusion**.
 
 ## 1. Repository Structure
 
@@ -44,16 +44,21 @@ KG4ER-New/
 
 ## 3. Model Components
 
-SemanticConvE V3 uses:
+SemanticConvE V3.1 uses:
 
 ```text
 entity representation =
 ID embedding
 + entity type embedding
 + gate_sem[type] * semantic_quality(entity) * text semantic embedding
-+ gate_ped[type] * pedagogical numeric embedding
-+ gate_cluster[type] * learner cluster embedding
++ mask_ped(type) * gate_ped[type] * pedagogical numeric embedding
++ mask_cluster(type) * gate_cluster[type] * learner cluster embedding
 ```
+
+where `mask_ped(type)` is 1 only for learner and exercise entities, and
+`mask_cluster(type)` is 1 only for learner entities. This avoids injecting
+learner-cluster or numeric-projector bias into concept/exercise entities that
+do not own those features.
 
 and:
 
@@ -82,15 +87,19 @@ runs/{dataset}/{run_id}/summary/gate_values_per_seed.csv
 runs/{dataset}/{run_id}/summary/gate_values_mean_std.csv
 ```
 
-## 4. V3 Changes Compared with V2
+## 4. V3.1 Changes Compared with V2/V3
 
-| Area | V2 | V3 |
-| --- | --- | --- |
-| Entity fusion | Direct addition of ID, semantic, pedagogical, type, and cluster embeddings | Type-aware gated fusion after semantic/numeric projection |
-| Semantic reliability | All available text embeddings contributed equally | Each entity has a fixed `semantic_quality` prior based on semantic source |
-| Explainable diagnostics | Only recommendation explanations and metrics | Adds learned gate values for semantic, pedagogical, and cluster contributions |
-| Relation encoding | Continuous relation type + strength | Kept unchanged |
-| Recommendation scoring | `score(uid, rec, exercise)` over exercise tails | Kept unchanged |
+| Area | V2 | V3 | V3.1 |
+| --- | --- | --- | --- |
+| Entity fusion | Direct addition of ID, semantic, pedagogical, type, and cluster embeddings | Type-aware gated fusion after semantic/numeric projection | Type-aware gated fusion with entity-type masks |
+| Semantic reliability | All available text embeddings contributed equally | Each entity has a fixed `semantic_quality` prior based on semantic source | Kept unchanged |
+| Gate initialization | Not used | Gate sigmoid initialized at 0.5 | Gate sigmoid initialized at 0.1 |
+| Numeric counts | Raw log-count feature | Raw log-count feature | Log-count scaled into `[0, 1]` |
+| Cluster feature | Directly fused | Gated but kept a non-learner placeholder vector | Applied only to learner entities |
+| Pedagogical numeric feature | Directly fused | Gated for every entity type | Applied only to learner and exercise entities |
+| Explainable diagnostics | Only recommendation explanations and metrics | Adds learned gate values for semantic, pedagogical, and cluster contributions | Kept unchanged |
+| Relation encoding | Continuous relation type + strength | Kept unchanged | Kept unchanged |
+| Recommendation scoring | `score(uid, rec, exercise)` over exercise tails | Kept unchanged | Kept unchanged |
 
 ## 5. Supported Ablations
 
