@@ -95,6 +95,114 @@ class SemanticConvERelationEncodingTest(unittest.TestCase):
             "no_semantic should make entity embeddings independent from text features",
         )
 
+    def test_no_concept_semantic_only_masks_concept_text(self) -> None:
+        model_a = self.build_model(
+            entity_type_ids=torch.tensor(
+                [
+                    ENTITY_TYPE_TO_ID["uid"],
+                    ENTITY_TYPE_TO_ID["kc"],
+                    ENTITY_TYPE_TO_ID["ex"],
+                ],
+                dtype=torch.long,
+            )
+        )
+        torch.manual_seed(2024)
+        model_b = self.build_model(
+            entity_type_ids=torch.tensor(
+                [
+                    ENTITY_TYPE_TO_ID["uid"],
+                    ENTITY_TYPE_TO_ID["kc"],
+                    ENTITY_TYPE_TO_ID["ex"],
+                ],
+                dtype=torch.long,
+            )
+        )
+        model_a.ablation_mode = "no_concept_semantic"
+        model_b.ablation_mode = "no_concept_semantic"
+        with torch.no_grad():
+            for model in [model_a, model_b]:
+                model.emb_e.weight.zero_()
+                model.entity_type_emb.weight.zero_()
+                model.cluster_emb.weight.zero_()
+                for layer in model.numeric_projector:
+                    if hasattr(layer, "weight"):
+                        layer.weight.zero_()
+                    if hasattr(layer, "bias") and layer.bias is not None:
+                        layer.bias.zero_()
+                model.text_projector.weight.zero_()
+                model.text_projector.weight[0, 0] = 1.0
+                model.raw_semantic_gate.fill_(10.0)
+            model_a.text_features.zero_()
+            model_b.text_features.zero_()
+            model_b.text_features[1, 0] = 1.0
+            model_b.text_features[2, 0] = 1.0
+
+        embeddings_a = model_a.entity_embedding(torch.tensor([1, 2], dtype=torch.long))
+        embeddings_b = model_b.entity_embedding(torch.tensor([1, 2], dtype=torch.long))
+
+        self.assertTrue(
+            torch.allclose(embeddings_a[0], embeddings_b[0], atol=1e-6),
+            "no_concept_semantic should remove text contribution for concept entities only",
+        )
+        self.assertFalse(
+            torch.allclose(embeddings_a[1], embeddings_b[1], atol=1e-6),
+            "no_concept_semantic should keep exercise semantic text active",
+        )
+
+    def test_no_exercise_semantic_only_masks_exercise_text(self) -> None:
+        model_a = self.build_model(
+            entity_type_ids=torch.tensor(
+                [
+                    ENTITY_TYPE_TO_ID["uid"],
+                    ENTITY_TYPE_TO_ID["kc"],
+                    ENTITY_TYPE_TO_ID["ex"],
+                ],
+                dtype=torch.long,
+            )
+        )
+        torch.manual_seed(2024)
+        model_b = self.build_model(
+            entity_type_ids=torch.tensor(
+                [
+                    ENTITY_TYPE_TO_ID["uid"],
+                    ENTITY_TYPE_TO_ID["kc"],
+                    ENTITY_TYPE_TO_ID["ex"],
+                ],
+                dtype=torch.long,
+            )
+        )
+        model_a.ablation_mode = "no_exercise_semantic"
+        model_b.ablation_mode = "no_exercise_semantic"
+        with torch.no_grad():
+            for model in [model_a, model_b]:
+                model.emb_e.weight.zero_()
+                model.entity_type_emb.weight.zero_()
+                model.cluster_emb.weight.zero_()
+                for layer in model.numeric_projector:
+                    if hasattr(layer, "weight"):
+                        layer.weight.zero_()
+                    if hasattr(layer, "bias") and layer.bias is not None:
+                        layer.bias.zero_()
+                model.text_projector.weight.zero_()
+                model.text_projector.weight[0, 0] = 1.0
+                model.raw_semantic_gate.fill_(10.0)
+            model_a.text_features.zero_()
+            model_b.text_features.zero_()
+            model_b.text_features[1, 0] = 1.0
+            model_b.text_features[2, 0] = 1.0
+
+        embeddings_a = model_a.entity_embedding(torch.tensor([1, 2], dtype=torch.long))
+        embeddings_b = model_b.entity_embedding(torch.tensor([1, 2], dtype=torch.long))
+
+        self.assertFalse(
+            torch.allclose(embeddings_a[0], embeddings_b[0], atol=1e-6),
+            "no_exercise_semantic should keep concept semantic text active",
+        )
+        self.assertTrue(
+            torch.allclose(embeddings_a[1], embeddings_b[1], atol=1e-6),
+            "no_exercise_semantic should remove text contribution for exercise entities only",
+        )
+
     def test_gate_values_are_type_level_and_start_near_tenth(self) -> None:
         model = self.build_model()
 
@@ -204,6 +312,138 @@ class SemanticConvERelationEncodingTest(unittest.TestCase):
         )
         self.assertFalse(torch.allclose(embeddings[1], torch.zeros_like(embeddings[1]), atol=1e-6))
         self.assertFalse(torch.allclose(embeddings[2], torch.zeros_like(embeddings[2]), atol=1e-6))
+
+    def test_no_exercise_irt_only_masks_exercise_numeric_features(self) -> None:
+        model = self.build_model(
+            entity_type_ids=torch.tensor(
+                [
+                    ENTITY_TYPE_TO_ID["uid"],
+                    ENTITY_TYPE_TO_ID["kc"],
+                    ENTITY_TYPE_TO_ID["ex"],
+                ],
+                dtype=torch.long,
+            ),
+            numeric_features=torch.ones((3, 2), dtype=torch.float32),
+        )
+        model.ablation_mode = "no_exercise_irt"
+        with torch.no_grad():
+            model.emb_e.weight.zero_()
+            model.entity_type_emb.weight.zero_()
+            model.text_projector.weight.zero_()
+            model.semantic_quality.zero_()
+            model.cluster_emb.weight.zero_()
+            for layer in model.numeric_projector:
+                if hasattr(layer, "weight"):
+                    layer.weight.zero_()
+                if hasattr(layer, "bias") and layer.bias is not None:
+                    layer.bias.zero_()
+            model.numeric_projector[-1].bias[0] = 1.0
+            model.raw_pedagogical_gate.fill_(10.0)
+
+        embeddings = model.entity_embedding(torch.tensor([0, 2], dtype=torch.long))
+
+        self.assertFalse(torch.allclose(embeddings[0], torch.zeros_like(embeddings[0]), atol=1e-6))
+        self.assertTrue(
+            torch.allclose(embeddings[1], torch.zeros_like(embeddings[1]), atol=1e-6),
+            "no_exercise_irt should remove numeric features only for exercise entities",
+        )
+
+    def test_no_learner_irt_only_masks_learner_numeric_features(self) -> None:
+        model = self.build_model(
+            entity_type_ids=torch.tensor(
+                [
+                    ENTITY_TYPE_TO_ID["uid"],
+                    ENTITY_TYPE_TO_ID["kc"],
+                    ENTITY_TYPE_TO_ID["ex"],
+                ],
+                dtype=torch.long,
+            ),
+            numeric_features=torch.ones((3, 2), dtype=torch.float32),
+        )
+        model.ablation_mode = "no_learner_irt"
+        with torch.no_grad():
+            model.emb_e.weight.zero_()
+            model.entity_type_emb.weight.zero_()
+            model.text_projector.weight.zero_()
+            model.semantic_quality.zero_()
+            model.cluster_emb.weight.zero_()
+            for layer in model.numeric_projector:
+                if hasattr(layer, "weight"):
+                    layer.weight.zero_()
+                if hasattr(layer, "bias") and layer.bias is not None:
+                    layer.bias.zero_()
+            model.numeric_projector[-1].bias[0] = 1.0
+            model.raw_pedagogical_gate.fill_(10.0)
+
+        embeddings = model.entity_embedding(torch.tensor([0, 2], dtype=torch.long))
+
+        self.assertTrue(
+            torch.allclose(embeddings[0], torch.zeros_like(embeddings[0]), atol=1e-6),
+            "no_learner_irt should remove numeric features only for learner entities",
+        )
+        self.assertFalse(torch.allclose(embeddings[1], torch.zeros_like(embeddings[1]), atol=1e-6))
+
+    def test_no_cluster_masks_learner_cluster_only(self) -> None:
+        model = self.build_model(
+            entity_type_ids=torch.tensor(
+                [
+                    ENTITY_TYPE_TO_ID["uid"],
+                    ENTITY_TYPE_TO_ID["kc"],
+                    ENTITY_TYPE_TO_ID["ex"],
+                ],
+                dtype=torch.long,
+            ),
+            cluster_ids=torch.tensor([0, NO_CLUSTER_ID, NO_CLUSTER_ID], dtype=torch.long),
+        )
+        model.ablation_mode = "no_cluster"
+        with torch.no_grad():
+            model.emb_e.weight.zero_()
+            model.entity_type_emb.weight.zero_()
+            model.text_projector.weight.zero_()
+            model.semantic_quality.zero_()
+            for layer in model.numeric_projector:
+                if hasattr(layer, "weight"):
+                    layer.weight.zero_()
+                if hasattr(layer, "bias") and layer.bias is not None:
+                    layer.bias.zero_()
+            model.cluster_emb.weight.zero_()
+            model.cluster_emb.weight[0, 0] = 1.0
+            model.raw_cluster_gate.fill_(10.0)
+
+        embedding = model.entity_embedding(torch.tensor([0], dtype=torch.long))[0]
+
+        self.assertTrue(
+            torch.allclose(embedding, torch.zeros_like(embedding), atol=1e-6),
+            "no_cluster should remove learner cluster embeddings without disabling other pedagogical features",
+        )
+
+    def test_discrete_relation_uses_relation_id_embedding(self) -> None:
+        model = self.build_model()
+        model.ablation_mode = "discrete_relation"
+        relation_ids = torch.tensor([0, 1], dtype=torch.long)
+
+        relation_embeddings = model.relation_embedding(relation_ids)
+
+        self.assertFalse(
+            torch.allclose(relation_embeddings[0], relation_embeddings[1], atol=1e-6),
+            "discrete_relation should distinguish relations with different ids even when type and strength match",
+        )
+
+    def test_hybrid_relation_combines_relation_id_with_type_and_strength(self) -> None:
+        model = self.build_model()
+        model.ablation_mode = "hybrid_relation"
+        relation_ids = torch.tensor([0, 1, 2], dtype=torch.long)
+
+        relation_embeddings = model.relation_embedding(relation_ids)
+
+        self.assertFalse(
+            torch.allclose(relation_embeddings[0], relation_embeddings[1], atol=1e-6),
+            "hybrid_relation should retain relation-id-specific capacity",
+        )
+        self.assertFalse(
+            torch.allclose(relation_embeddings[0], relation_embeddings[2], atol=1e-6),
+            "hybrid_relation should also react to continuous relation strength",
+        )
 
 
 if __name__ == "__main__":

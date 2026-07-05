@@ -13,7 +13,7 @@ from semantic_experiment_utils import (
     VALID_ABLATIONS,
     ablation_model_dir,
     default_runs_root,
-    parse_csv_list,
+    parse_ablation_list,
     parse_seed_list,
     parse_top_ks,
     read_json,
@@ -255,7 +255,7 @@ def parse_args() -> argparse.Namespace:
 def main() -> None:
     args = parse_args()
     seeds = parse_seed_list(args.seeds)
-    ablations = parse_csv_list(args.ablations)
+    ablations = parse_ablation_list(args.ablations)
     invalid_ablations = sorted(set(ablations) - set(VALID_ABLATIONS))
     if invalid_ablations:
         raise ValueError(f"Unknown ablations: {','.join(invalid_ablations)}")

@@ -12,7 +12,7 @@ from pathlib import Path
 from typing import Any, Iterable, List, Sequence
 
 
-MODEL_VERSION = "semantic_conve_continuous_relation_masked_gated_fusion_v31"
+MODEL_VERSION = "semantic_conve_continuous_relation_fine_ablation_v4"
 
 VALID_ABLATIONS = [
     "full",
@@ -20,12 +20,37 @@ VALID_ABLATIONS = [
     "no_forgetting",
     "no_seq",
     "no_semantic",
+    "no_concept_semantic",
+    "no_exercise_semantic",
     "no_pedagogical",
+    "no_exercise_irt",
+    "no_learner_irt",
+    "no_cluster",
     "no_relation_strength",
+    "discrete_relation",
+    "hybrid_relation",
     "id_only",
 ]
 
 GRAPH_ABLATIONS = ["no_mastery", "no_forgetting", "no_seq"]
+
+DEFAULT_ALL_ABLATIONS = [
+    "full",
+    "no_mastery",
+    "no_forgetting",
+    "no_seq",
+    "no_semantic",
+    "no_concept_semantic",
+    "no_exercise_semantic",
+    "no_pedagogical",
+    "no_exercise_irt",
+    "no_learner_irt",
+    "no_cluster",
+    "no_relation_strength",
+    "discrete_relation",
+    "hybrid_relation",
+    "id_only",
+]
 
 DEFAULT_DATASETS = [
     "Eedi",
@@ -93,6 +118,15 @@ def parse_csv_list(value: str | Sequence[str]) -> List[str]:
     if isinstance(value, str):
         return [item.strip() for item in value.split(",") if item.strip()]
     return [str(item).strip() for item in value if str(item).strip()]
+
+
+def parse_ablation_list(value: str | Sequence[str]) -> List[str]:
+    items = parse_csv_list(value)
+    if any(item.lower() == "all" for item in items):
+        if len(items) != 1:
+            raise ValueError("Use --ablations all by itself, or provide an explicit comma-separated list.")
+        return list(DEFAULT_ALL_ABLATIONS)
+    return items
 
 
 def parse_seed_list(value: str | Sequence[int]) -> List[int]:

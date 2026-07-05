@@ -22,8 +22,8 @@ from semantic_experiment_utils import (
     graph_path_for_dataset,
     mark_stage,
     old_codes_root,
+    parse_ablation_list,
     parse_seed_list,
-    parse_csv_list,
     parse_top_ks,
     python_env_info,
     read_json,
@@ -264,7 +264,7 @@ def parse_args() -> argparse.Namespace:
 def main() -> None:
     args = parse_args()
     args.seeds = parse_seed_list(args.seeds)
-    args.ablations = parse_csv_list(args.ablations)
+    args.ablations = parse_ablation_list(args.ablations)
     invalid_ablations = sorted(set(args.ablations) - set(VALID_ABLATIONS))
     if invalid_ablations:
         raise ValueError(f"Unknown ablations: {','.join(invalid_ablations)}")

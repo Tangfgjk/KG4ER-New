@@ -6,7 +6,13 @@ import unittest
 import tempfile
 from pathlib import Path
 
-from semantic_experiment_utils import MODEL_VERSION, ablation_model_dir, graph_path_for_dataset
+from semantic_experiment_utils import (
+    DEFAULT_ALL_ABLATIONS,
+    MODEL_VERSION,
+    ablation_model_dir,
+    graph_path_for_dataset,
+    parse_ablation_list,
+)
 
 
 class SemanticExperimentUtilsTest(unittest.TestCase):
@@ -41,6 +47,18 @@ class SemanticExperimentUtilsTest(unittest.TestCase):
         self.assertEqual(ablation_model_dir("full"), "SemanticConvE")
         self.assertEqual(ablation_model_dir("no_semantic"), "SemanticConvE_no_semantic")
         self.assertEqual(ablation_model_dir("no_forgetting"), "SemanticConvE_no_forgetting")
+
+    def test_parse_ablation_list_expands_all_keyword(self) -> None:
+        ablations = parse_ablation_list("all")
+
+        self.assertEqual(ablations, DEFAULT_ALL_ABLATIONS)
+        self.assertIn("full", ablations)
+        self.assertIn("no_concept_semantic", ablations)
+        self.assertIn("no_exercise_irt", ablations)
+        self.assertIn("hybrid_relation", ablations)
+
+    def test_parse_ablation_list_keeps_explicit_order(self) -> None:
+        self.assertEqual(parse_ablation_list("full,no_cluster"), ["full", "no_cluster"])
 
 
 if __name__ == "__main__":

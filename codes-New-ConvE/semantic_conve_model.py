@@ -19,8 +19,15 @@ VALID_MODEL_ABLATIONS = {
     "no_forgetting",
     "no_seq",
     "no_semantic",
+    "no_concept_semantic",
+    "no_exercise_semantic",
     "no_pedagogical",
+    "no_exercise_irt",
+    "no_learner_irt",
+    "no_cluster",
     "no_relation_strength",
+    "discrete_relation",
+    "hybrid_relation",
     "id_only",
 }
 
@@ -41,8 +48,8 @@ class SemanticConvE(nn.Module):
 
     Relation representation:
         relation type embedding + projected continuous relation strength, followed
-        by LayerNorm. Relation ids are only used as lookup indices for type and
-        strength; they are not embedded as independent discrete bins.
+        by LayerNorm in the default setting. Fine-grained ablations can switch
+        to discrete relation-id embeddings or a hybrid relation representation.
     """
 
     def __init__(
@@ -82,6 +89,7 @@ class SemanticConvE(nn.Module):
         self.emb_e = nn.Embedding(nentity, embedding_dim)
         self.entity_type_emb = nn.Embedding(4, embedding_dim)
         self.cluster_emb = nn.Embedding(NO_CLUSTER_ID + 1, embedding_dim)
+        self.relation_id_emb = nn.Embedding(nrelation, embedding_dim)
         self.relation_type_emb = nn.Embedding(len(RELATION_TYPE_TO_ID), embedding_dim)
         gate_init = torch.full((len(ENTITY_TYPE_TO_ID),), _gate_logit(), dtype=torch.float32)
         self.raw_semantic_gate = nn.Parameter(gate_init.clone())
@@ -144,6 +152,7 @@ class SemanticConvE(nn.Module):
         xavier_normal_(self.emb_e.weight.data)
         xavier_normal_(self.entity_type_emb.weight.data)
         xavier_normal_(self.cluster_emb.weight.data)
+        xavier_normal_(self.relation_id_emb.weight.data)
         xavier_normal_(self.relation_type_emb.weight.data)
 
     def entity_embedding(self, entity_ids: torch.Tensor) -> torch.Tensor:
@@ -155,14 +164,19 @@ class SemanticConvE(nn.Module):
         text_features = self.text_features[entity_ids]
         if self.freeze_text_features:
             text_features = text_features.detach()
-        if self.ablation_mode == "no_semantic":
+        if self.ablation_mode in {"no_semantic", "id_only"}:
             semantic_emb = torch.zeros_like(id_emb)
         else:
             semantic_emb = self.text_projector(text_features)
             semantic_gate = torch.sigmoid(self.raw_semantic_gate[type_ids]).unsqueeze(-1)
-            semantic_emb = semantic_gate * self.semantic_quality[entity_ids] * semantic_emb
+            semantic_mask = torch.ones_like(semantic_gate)
+            if self.ablation_mode == "no_concept_semantic":
+                semantic_mask = (type_ids != ENTITY_TYPE_TO_ID["kc"]).float().unsqueeze(-1)
+            elif self.ablation_mode == "no_exercise_semantic":
+                semantic_mask = (type_ids != ENTITY_TYPE_TO_ID["ex"]).float().unsqueeze(-1)
+            semantic_emb = semantic_mask * semantic_gate * self.semantic_quality[entity_ids] * semantic_emb
 
-        if self.ablation_mode == "no_pedagogical":
+        if self.ablation_mode in {"no_pedagogical", "id_only"}:
             pedagogical_emb = torch.zeros_like(id_emb)
         else:
             pedagogical_emb = self.numeric_projector(self.numeric_features[entity_ids])
@@ -170,10 +184,14 @@ class SemanticConvE(nn.Module):
             pedagogical_mask = (
                 (type_ids == ENTITY_TYPE_TO_ID["uid"]) | (type_ids == ENTITY_TYPE_TO_ID["ex"])
             ).float().unsqueeze(-1)
+            if self.ablation_mode == "no_exercise_irt":
+                pedagogical_mask = pedagogical_mask * (type_ids != ENTITY_TYPE_TO_ID["ex"]).float().unsqueeze(-1)
+            elif self.ablation_mode == "no_learner_irt":
+                pedagogical_mask = pedagogical_mask * (type_ids != ENTITY_TYPE_TO_ID["uid"]).float().unsqueeze(-1)
             pedagogical_emb = pedagogical_mask * pedagogical_gate * pedagogical_emb
 
         type_emb = self.entity_type_emb(type_ids)
-        if self.ablation_mode == "no_pedagogical":
+        if self.ablation_mode in {"no_pedagogical", "no_cluster", "id_only"}:
             cluster_emb = torch.zeros_like(id_emb)
         else:
             cluster_emb = self.cluster_emb(self.cluster_ids[entity_ids].clamp(min=0, max=NO_CLUSTER_ID))
@@ -197,11 +215,17 @@ class SemanticConvE(nn.Module):
         }
 
     def relation_embedding(self, relation_ids: torch.Tensor) -> torch.Tensor:
+        id_emb = self.relation_id_emb(relation_ids)
+        if self.ablation_mode in {"discrete_relation", "id_only"}:
+            return self.relation_norm(id_emb)
+
         type_emb = self.relation_type_emb(self.relation_type_ids[relation_ids])
         if self.ablation_mode in {"no_relation_strength", "id_only"}:
             strength_emb = torch.zeros_like(type_emb)
         else:
             strength_emb = self.relation_strength_projector(self.relation_strengths[relation_ids])
+        if self.ablation_mode == "hybrid_relation":
+            return self.relation_norm(id_emb + type_emb + strength_emb)
         return self.relation_norm(type_emb + strength_emb)
 
     def conve_transform(self, h_emb: torch.Tensor, r_emb: torch.Tensor) -> torch.Tensor:
