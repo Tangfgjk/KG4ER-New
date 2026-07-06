@@ -7,7 +7,7 @@ import json
 import pickle
 import time
 from pathlib import Path
-from typing import Dict, List
+from typing import Dict, List, Tuple
 
 import torch
 
@@ -38,9 +38,105 @@ def test_users_from_triples(data_path: Path) -> List[str]:
     with (data_path / "test_triples.txt").open("r", encoding="utf-8") as fp:
         for line in fp:
             head, relation, tail = line.strip().split("\t")
-            if relation.startswith("mlkc"):
+            if tail.startswith("uid") and (
+                relation.startswith("mlkc") or relation.startswith("pkc") or relation.startswith("exfr")
+            ):
                 users.add(tail)
     return sorted(users, key=lambda uid: int(uid[3:]) if uid.startswith("uid") and uid[3:].isdigit() else uid)
+
+
+def exercise_index(entity_name: str) -> int | None:
+    if not entity_name.startswith("ex") or not entity_name[2:].isdigit():
+        return None
+    return int(entity_name[2:])
+
+
+def read_exfr_relation_names(data_path: Path, users: List[str], q_count: int) -> Dict[str, List[str | None]]:
+    relation_names: Dict[str, List[str | None]] = {uid: [None] * q_count for uid in users}
+    with (data_path / "test_triples.txt").open("r", encoding="utf-8") as fp:
+        for line in fp:
+            head, relation, tail = line.strip().split("\t")
+            if not relation.startswith("exfr") or tail not in relation_names:
+                continue
+            ex_idx = exercise_index(head)
+            if ex_idx is None or ex_idx >= q_count:
+                continue
+            relation_names[tail][ex_idx] = relation
+    return relation_names
+
+
+def resolve_relation_id(relation2id: Dict[str, int], relation_name: str) -> int:
+    if relation_name in relation2id:
+        return relation2id[relation_name]
+    if relation_name.startswith("exfr"):
+        value = float(relation_name[4:])
+        candidates = [
+            f"exfr{value:.2f}",
+            f"exfr{round(value, 2)}",
+            f"exfr{value:.2f}".rstrip("0").rstrip("."),
+        ]
+        for candidate in candidates:
+            if candidate in relation2id:
+                return relation2id[candidate]
+    raise KeyError(f"Cannot resolve relation id for {relation_name!r}")
+
+
+def exfr_relation_tensors(
+    relation_names: Dict[str, List[str | None]],
+    users: List[str],
+    q_count: int,
+    relation2id: Dict[str, int],
+    device: torch.device,
+) -> Tuple[torch.Tensor, torch.Tensor]:
+    fallback_relation_id = next(iter(relation2id.values()))
+    relation_ids = torch.full((len(users), q_count), fallback_relation_id, dtype=torch.long, device=device)
+    mask = torch.zeros((len(users), q_count), dtype=torch.float32, device=device)
+    for user_idx, uid in enumerate(users):
+        for ex_idx, relation_name in enumerate(relation_names.get(uid, [])):
+            if relation_name is None:
+                continue
+            relation_ids[user_idx, ex_idx] = resolve_relation_id(relation2id, relation_name)
+            mask[user_idx, ex_idx] = 1.0
+    return relation_ids, mask
+
+
+def score_forgetting_branch(
+    model: SemanticConvE,
+    rec_relation_id: int,
+    exercise_tail_ids: torch.Tensor,
+    exfr_relation_ids: torch.Tensor,
+    exfr_mask: torch.Tensor,
+    exercise_batch_size: int,
+) -> torch.Tensor:
+    batch_size, exercise_count = exfr_relation_ids.shape
+    scores = torch.zeros((batch_size, exercise_count), dtype=torch.float32, device=exercise_tail_ids.device)
+    rec_relation = torch.empty(0, dtype=torch.long, device=exercise_tail_ids.device)
+    for start in range(0, exercise_count, exercise_batch_size):
+        end = min(start + exercise_batch_size, exercise_count)
+        chunk_tail_ids = exercise_tail_ids[start:end]
+        flat_tail_ids = chunk_tail_ids.unsqueeze(0).expand(batch_size, -1).reshape(-1)
+        flat_exfr_ids = exfr_relation_ids[:, start:end].reshape(-1)
+        if rec_relation.numel() != flat_tail_ids.numel():
+            rec_relation = torch.full_like(flat_tail_ids, rec_relation_id)
+        exercise_emb = model.entity_embedding(flat_tail_ids)
+        exfr_emb = model.relation_embedding(flat_exfr_ids)
+        forgetting_head = exercise_emb + exfr_emb
+        chunk_scores = model.score_tail_pairs_from_head_embeddings(forgetting_head, rec_relation, flat_tail_ids)
+        scores[:, start:end] = chunk_scores.view(batch_size, end - start) * exfr_mask[:, start:end]
+    return scores
+
+
+def score_exercise_candidates(
+    model: SemanticConvE,
+    h: torch.Tensor,
+    r: torch.Tensor,
+    exercise_tail_ids: torch.Tensor,
+    type_aware: bool,
+) -> torch.Tensor:
+    if type_aware:
+        return model.score_tails(h, r, exercise_tail_ids)
+    all_scores = model.score_tails(h, r)
+    return all_scores.index_select(1, exercise_tail_ids)
 
 
 def parse_args() -> argparse.Namespace:
@@ -60,11 +156,17 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--input-drop", "--input_drop", dest="input_drop", type=float, default=0.2)
     parser.add_argument("--hidden-drop", "--hidden_drop", dest="hidden_drop", type=float, default=0.2)
     parser.add_argument("--feat-drop", "--feat_drop", dest="feat_drop", type=float, default=0.3)
+    parser.add_argument("--forgetting-score-weight", type=float, default=0.2)
+    parser.add_argument("--forgetting-exercise-batch-size", type=int, default=256)
     return parser.parse_args()
 
 
 def main() -> None:
     args = parse_args()
+    if args.forgetting_score_weight < 0:
+        raise ValueError("--forgetting-score-weight must be non-negative")
+    if args.forgetting_exercise_batch_size <= 0:
+        raise ValueError("--forgetting-exercise-batch-size must be positive")
     device = resolve_device(str(args.cuda))
     bundle = load_semantic_feature_bundle(args.data_path, args.feature_dir, device=device)
     model = SemanticConvE.from_feature_bundle(
@@ -95,6 +197,17 @@ def main() -> None:
     rec_id = bundle.relation2id["rec"]
     rec_relation = torch.tensor([rec_id], dtype=torch.long, device=device)
     users = test_users_from_triples(args.data_path)
+    type_aware_scoring = args.ablation != "no_type_aware_scoring"
+    use_forgetting_score = args.forgetting_score_weight > 0 and args.ablation != "no_forgetting"
+    exfr_ids = None
+    exfr_mask = None
+    exfr_coverage = 0.0
+    if use_forgetting_score and users:
+        exfr_relation_names = read_exfr_relation_names(args.data_path, users, q_count)
+        exfr_ids, exfr_mask = exfr_relation_tensors(exfr_relation_names, users, q_count, bundle.relation2id, device)
+        exfr_coverage = float(exfr_mask.mean().detach().cpu().item()) if exfr_mask.numel() else 0.0
+        use_forgetting_score = bool(exfr_mask.sum().item() > 0)
+    effective_forgetting_score_weight = float(args.forgetting_score_weight) if use_forgetting_score else 0.0
 
     uid_ex_scores = []
     inference_start = time.perf_counter()
@@ -103,7 +216,18 @@ def main() -> None:
             batch_users = users[start : start + args.batch_size]
             h = torch.tensor([bundle.entity2id[uid] for uid in batch_users], dtype=torch.long, device=device)
             r = rec_relation.repeat(len(batch_users))
-            scores = model.score_tails(h, r, exercise_tail_ids).detach().cpu().tolist()
+            scores = score_exercise_candidates(model, h, r, exercise_tail_ids, type_aware=type_aware_scoring)
+            if use_forgetting_score and exfr_ids is not None and exfr_mask is not None:
+                forgetting_scores = score_forgetting_branch(
+                    model,
+                    rec_id,
+                    exercise_tail_ids,
+                    exfr_ids[start : start + len(batch_users)],
+                    exfr_mask[start : start + len(batch_users)],
+                    args.forgetting_exercise_batch_size,
+                )
+                scores = scores + effective_forgetting_score_weight * forgetting_scores
+            scores = scores.detach().cpu().tolist()
             uid_ex_scores.extend((uid, row) for uid, row in zip(batch_users, scores))
     inference_seconds = time.perf_counter() - inference_start
 
@@ -123,7 +247,15 @@ def main() -> None:
             "test_user_count": len(users),
             "exercise_count": q_count,
             "inference_seconds": round(inference_seconds, 6),
-            "scoring": "type-aware: rec scores are computed only over exercise entities ex0..exN",
+            "forgetting_score_weight": float(args.forgetting_score_weight),
+            "effective_forgetting_score_weight": effective_forgetting_score_weight,
+            "forgetting_exfr_coverage": round(exfr_coverage, 6),
+            "type_aware_scoring": type_aware_scoring,
+            "scoring": (
+                "type-aware: rec scores are computed only over exercise entities ex0..exN unless "
+                "ablation=no_type_aware_scoring scores all entities and filters exercise columns; "
+                "optional KG4EX-style forgetting branch adds weight * score(ex+exfr, rec, ex)"
+            ),
         },
     )
     print(json.dumps({"output_file": str(output_file), "users": len(users), "exercises": q_count}, ensure_ascii=False, indent=2))

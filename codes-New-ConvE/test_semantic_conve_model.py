@@ -49,22 +49,48 @@ class SemanticConvERelationEncodingTest(unittest.TestCase):
             semantic_quality=torch.ones((nentity, 1), dtype=torch.float32),
             embedding_dim=20,
             embedding_shape1=4,
-            hidden_size=144,
+            hidden_size=576,
         )
 
-    def test_relation_embedding_depends_on_type_and_strength_not_relation_id(self) -> None:
+    def test_full_relation_embedding_uses_relation_id_type_and_strength(self) -> None:
         model = self.build_model()
         relation_ids = torch.tensor([0, 1, 2], dtype=torch.long)
 
         relation_embeddings = model.relation_embedding(relation_ids)
 
-        self.assertTrue(
+        self.assertFalse(
             torch.allclose(relation_embeddings[0], relation_embeddings[1], atol=1e-6),
-            "same relation type and same continuous strength should share one representation",
+            "V5 full relation encoding should retain relation-id-specific capacity",
         )
         self.assertFalse(
             torch.allclose(relation_embeddings[0], relation_embeddings[2], atol=1e-6),
-            "different continuous strengths should produce different relation representations",
+            "V5 full relation encoding should also react to continuous relation strength",
+        )
+
+    def test_can_score_tail_pairs_from_external_head_embeddings(self) -> None:
+        model = self.build_model(
+            entity_type_ids=torch.tensor(
+                [
+                    ENTITY_TYPE_TO_ID["ex"],
+                    ENTITY_TYPE_TO_ID["ex"],
+                    ENTITY_TYPE_TO_ID["ex"],
+                ],
+                dtype=torch.long,
+            )
+        )
+        model.eval()
+        tail_ids = torch.tensor([1, 2], dtype=torch.long)
+        relation_ids = torch.tensor([0, 0], dtype=torch.long)
+        base_head = model.entity_embedding(torch.tensor([0, 0], dtype=torch.long))
+        shifted_head = base_head + 0.25
+
+        base_scores = model.score_tail_pairs_from_head_embeddings(base_head, relation_ids, tail_ids)
+        shifted_scores = model.score_tail_pairs_from_head_embeddings(shifted_head, relation_ids, tail_ids)
+
+        self.assertEqual(tuple(base_scores.shape), (2,))
+        self.assertFalse(
+            torch.allclose(base_scores, shifted_scores, atol=1e-6),
+            "explicit forgetting heads should be able to change tail scores",
         )
 
     def test_no_relation_strength_ignores_continuous_strength(self) -> None:
@@ -74,10 +100,21 @@ class SemanticConvERelationEncodingTest(unittest.TestCase):
 
         relation_embeddings = model.relation_embedding(relation_ids)
 
-        self.assertTrue(
+        self.assertFalse(
             torch.allclose(relation_embeddings[0], relation_embeddings[1], atol=1e-6),
-            "no_relation_strength should keep relation type but ignore continuous strength",
+            "no_relation_strength should keep relation ID capacity while ignoring continuous strength",
         )
+
+    def test_no_relation_aware_uses_relation_id_only(self) -> None:
+        model = self.build_model()
+        model.ablation_mode = "no_relation_aware"
+        relation_ids = torch.tensor([0, 1, 2], dtype=torch.long)
+
+        relation_embeddings = model.relation_embedding(relation_ids)
+
+        with torch.no_grad():
+            expected = model.relation_norm(model.relation_id_emb(relation_ids))
+        self.assertTrue(torch.allclose(relation_embeddings, expected, atol=1e-6))
 
     def test_no_semantic_ignores_text_features(self) -> None:
         torch.manual_seed(2024)
@@ -203,16 +240,61 @@ class SemanticConvERelationEncodingTest(unittest.TestCase):
             "no_exercise_semantic should remove text contribution for exercise entities only",
         )
 
-    def test_gate_values_are_type_level_and_start_near_tenth(self) -> None:
+    def test_gate_values_are_type_level_and_start_near_five_percent(self) -> None:
         model = self.build_model()
 
         gate_values = model.gate_values()
 
-        self.assertEqual(set(gate_values), set(ENTITY_TYPE_TO_ID))
-        for values in gate_values.values():
-            self.assertAlmostEqual(values["semantic"], 0.1, places=6)
-            self.assertAlmostEqual(values["pedagogical"], 0.1, places=6)
-            self.assertAlmostEqual(values["cluster"], 0.1, places=6)
+        entity_gate_values = {key: value for key, value in gate_values.items() if key != "relation"}
+        self.assertEqual(set(entity_gate_values), set(ENTITY_TYPE_TO_ID))
+        for values in entity_gate_values.values():
+            self.assertAlmostEqual(values["semantic"], 0.05, places=6)
+            self.assertAlmostEqual(values["pedagogical"], 0.05, places=6)
+            self.assertAlmostEqual(values["cluster"], 0.05, places=6)
+            self.assertAlmostEqual(values["type"], 0.05, places=6)
+        relation_gates = gate_values["relation"]
+        self.assertAlmostEqual(relation_gates["type"], 0.05, places=6)
+        self.assertAlmostEqual(relation_gates["strength"], 0.05, places=6)
+
+    def test_no_content_entity_keeps_id_and_type_but_masks_added_entity_features(self) -> None:
+        model_a = self.build_model(
+            entity_type_ids=torch.tensor(
+                [
+                    ENTITY_TYPE_TO_ID["uid"],
+                    ENTITY_TYPE_TO_ID["kc"],
+                    ENTITY_TYPE_TO_ID["ex"],
+                ],
+                dtype=torch.long,
+            ),
+            numeric_features=torch.ones((3, 2), dtype=torch.float32),
+            cluster_ids=torch.tensor([0, NO_CLUSTER_ID, NO_CLUSTER_ID], dtype=torch.long),
+        )
+        torch.manual_seed(2024)
+        model_b = self.build_model(
+            entity_type_ids=torch.tensor(
+                [
+                    ENTITY_TYPE_TO_ID["uid"],
+                    ENTITY_TYPE_TO_ID["kc"],
+                    ENTITY_TYPE_TO_ID["ex"],
+                ],
+                dtype=torch.long,
+            ),
+            numeric_features=torch.ones((3, 2), dtype=torch.float32),
+            cluster_ids=torch.tensor([0, NO_CLUSTER_ID, NO_CLUSTER_ID], dtype=torch.long),
+        )
+        model_a.ablation_mode = "no_content_entity"
+        model_b.ablation_mode = "no_content_entity"
+        with torch.no_grad():
+            model_b.text_features.fill_(9.0)
+            model_b.numeric_features.fill_(7.0)
+            model_b.cluster_ids.fill_(1)
+
+        entity_ids = torch.tensor([0, 1, 2], dtype=torch.long)
+
+        self.assertTrue(
+            torch.allclose(model_a.entity_embedding(entity_ids), model_b.entity_embedding(entity_ids), atol=1e-6),
+            "no_content_entity should ignore semantic, pedagogical, and cluster feature values",
+        )
 
     def test_semantic_quality_scales_semantic_contribution(self) -> None:
         model = self.build_model()

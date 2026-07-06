@@ -4,8 +4,10 @@ from __future__ import annotations
 
 import unittest
 import tempfile
+from argparse import Namespace
 from pathlib import Path
 
+from run_semantic_experiments import command_test
 from semantic_experiment_utils import (
     DEFAULT_ALL_ABLATIONS,
     MODEL_VERSION,
@@ -41,7 +43,8 @@ class SemanticExperimentUtilsTest(unittest.TestCase):
             self.assertTrue((graph_path / "entities.dict").exists())
 
     def test_model_version_marks_continuous_relation_encoding(self) -> None:
-        self.assertIn("continuous_relation", MODEL_VERSION)
+        self.assertIn("v5", MODEL_VERSION)
+        self.assertIn("id_anchored", MODEL_VERSION)
 
     def test_ablation_model_dir_keeps_full_backward_compatible(self) -> None:
         self.assertEqual(ablation_model_dir("full"), "SemanticConvE")
@@ -52,13 +55,31 @@ class SemanticExperimentUtilsTest(unittest.TestCase):
         ablations = parse_ablation_list("all")
 
         self.assertEqual(ablations, DEFAULT_ALL_ABLATIONS)
-        self.assertIn("full", ablations)
-        self.assertIn("no_concept_semantic", ablations)
-        self.assertIn("no_exercise_irt", ablations)
-        self.assertIn("hybrid_relation", ablations)
+        self.assertEqual(
+            ablations,
+            [
+                "full",
+                "no_content_entity",
+                "no_relation_aware",
+                "no_type_aware_scoring",
+                "no_mastery",
+                "no_forgetting",
+                "no_seq",
+            ],
+        )
 
     def test_parse_ablation_list_keeps_explicit_order(self) -> None:
         self.assertEqual(parse_ablation_list("full,no_cluster"), ["full", "no_cluster"])
+
+    def test_test_command_passes_forgetting_score_weight(self) -> None:
+        args = Namespace(dataset="Eedi", cuda="auto", forgetting_score_weight=0.2, forgetting_exercise_batch_size=128)
+
+        command = command_test(args, Path("graph"), Path("seed"), "full")
+
+        self.assertIn("--forgetting-score-weight", command)
+        self.assertIn("0.2", command)
+        self.assertIn("--forgetting-exercise-batch-size", command)
+        self.assertIn("128", command)
 
 
 if __name__ == "__main__":

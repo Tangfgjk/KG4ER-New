@@ -12,13 +12,16 @@ from pathlib import Path
 from typing import Any, Iterable, List, Sequence
 
 
-MODEL_VERSION = "semantic_conve_continuous_relation_fine_ablation_v4"
+MODEL_VERSION = "semantic_conve_v5_id_anchored_gated_fusion"
 
 VALID_ABLATIONS = [
     "full",
     "no_mastery",
     "no_forgetting",
     "no_seq",
+    "no_content_entity",
+    "no_relation_aware",
+    "no_type_aware_scoring",
     "no_semantic",
     "no_concept_semantic",
     "no_exercise_semantic",
@@ -36,20 +39,12 @@ GRAPH_ABLATIONS = ["no_mastery", "no_forgetting", "no_seq"]
 
 DEFAULT_ALL_ABLATIONS = [
     "full",
+    "no_content_entity",
+    "no_relation_aware",
+    "no_type_aware_scoring",
     "no_mastery",
     "no_forgetting",
     "no_seq",
-    "no_semantic",
-    "no_concept_semantic",
-    "no_exercise_semantic",
-    "no_pedagogical",
-    "no_exercise_irt",
-    "no_learner_irt",
-    "no_cluster",
-    "no_relation_strength",
-    "discrete_relation",
-    "hybrid_relation",
-    "id_only",
 ]
 
 DEFAULT_DATASETS = [

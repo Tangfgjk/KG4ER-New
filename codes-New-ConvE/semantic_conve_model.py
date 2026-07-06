@@ -18,6 +18,9 @@ VALID_MODEL_ABLATIONS = {
     "no_mastery",
     "no_forgetting",
     "no_seq",
+    "no_content_entity",
+    "no_relation_aware",
+    "no_type_aware_scoring",
     "no_semantic",
     "no_concept_semantic",
     "no_exercise_semantic",
@@ -31,7 +34,7 @@ VALID_MODEL_ABLATIONS = {
     "id_only",
 }
 
-GATE_INITIAL_VALUE = 0.1
+GATE_INITIAL_VALUE = 0.05
 
 
 def _gate_logit(value: float = GATE_INITIAL_VALUE) -> float:
@@ -43,13 +46,12 @@ class SemanticConvE(nn.Module):
     """ConvE with semantic, pedagogical and relation-aware representations.
 
     Entity representation:
-        ID embedding + projected text embedding + projected numeric features
-        + entity type embedding + learner cluster embedding, followed by LayerNorm.
+        ID embedding is the anchor. Projected text, numeric, type, and cluster
+        features are gated residual supplements, followed by LayerNorm.
 
     Relation representation:
-        relation type embedding + projected continuous relation strength, followed
-        by LayerNorm in the default setting. Fine-grained ablations can switch
-        to discrete relation-id embeddings or a hybrid relation representation.
+        relation ID embedding is the anchor. Relation type and continuous
+        relation strength are gated residual supplements, followed by LayerNorm.
     """
 
     def __init__(
@@ -95,6 +97,9 @@ class SemanticConvE(nn.Module):
         self.raw_semantic_gate = nn.Parameter(gate_init.clone())
         self.raw_pedagogical_gate = nn.Parameter(gate_init.clone())
         self.raw_cluster_gate = nn.Parameter(gate_init.clone())
+        self.raw_entity_type_gate = nn.Parameter(gate_init.clone())
+        self.raw_relation_type_gate = nn.Parameter(torch.tensor(_gate_logit(), dtype=torch.float32))
+        self.raw_relation_strength_gate = nn.Parameter(torch.tensor(_gate_logit(), dtype=torch.float32))
 
         self.text_projector = nn.Linear(text_dim, embedding_dim, bias=False)
         self.numeric_projector = nn.Sequential(
@@ -164,7 +169,7 @@ class SemanticConvE(nn.Module):
         text_features = self.text_features[entity_ids]
         if self.freeze_text_features:
             text_features = text_features.detach()
-        if self.ablation_mode in {"no_semantic", "id_only"}:
+        if self.ablation_mode in {"no_semantic", "no_content_entity", "id_only"}:
             semantic_emb = torch.zeros_like(id_emb)
         else:
             semantic_emb = self.text_projector(text_features)
@@ -176,7 +181,7 @@ class SemanticConvE(nn.Module):
                 semantic_mask = (type_ids != ENTITY_TYPE_TO_ID["ex"]).float().unsqueeze(-1)
             semantic_emb = semantic_mask * semantic_gate * self.semantic_quality[entity_ids] * semantic_emb
 
-        if self.ablation_mode in {"no_pedagogical", "id_only"}:
+        if self.ablation_mode in {"no_pedagogical", "no_content_entity", "id_only"}:
             pedagogical_emb = torch.zeros_like(id_emb)
         else:
             pedagogical_emb = self.numeric_projector(self.numeric_features[entity_ids])
@@ -190,8 +195,9 @@ class SemanticConvE(nn.Module):
                 pedagogical_mask = pedagogical_mask * (type_ids != ENTITY_TYPE_TO_ID["uid"]).float().unsqueeze(-1)
             pedagogical_emb = pedagogical_mask * pedagogical_gate * pedagogical_emb
 
-        type_emb = self.entity_type_emb(type_ids)
-        if self.ablation_mode in {"no_pedagogical", "no_cluster", "id_only"}:
+        type_gate = torch.sigmoid(self.raw_entity_type_gate[type_ids]).unsqueeze(-1)
+        type_emb = type_gate * self.entity_type_emb(type_ids)
+        if self.ablation_mode in {"no_pedagogical", "no_content_entity", "no_cluster", "id_only"}:
             cluster_emb = torch.zeros_like(id_emb)
         else:
             cluster_emb = self.cluster_emb(self.cluster_ids[entity_ids].clamp(min=0, max=NO_CLUSTER_ID))
@@ -205,28 +211,34 @@ class SemanticConvE(nn.Module):
         semantic = torch.sigmoid(self.raw_semantic_gate).detach().cpu().tolist()
         pedagogical = torch.sigmoid(self.raw_pedagogical_gate).detach().cpu().tolist()
         cluster = torch.sigmoid(self.raw_cluster_gate).detach().cpu().tolist()
-        return {
+        entity_gates = {
             names_by_id[idx]: {
                 "semantic": float(semantic[idx]),
                 "pedagogical": float(pedagogical[idx]),
                 "cluster": float(cluster[idx]),
+                "type": float(torch.sigmoid(self.raw_entity_type_gate[idx]).detach().cpu().item()),
             }
             for idx in sorted(names_by_id)
         }
+        entity_gates["relation"] = {
+            "type": float(torch.sigmoid(self.raw_relation_type_gate).detach().cpu().item()),
+            "strength": float(torch.sigmoid(self.raw_relation_strength_gate).detach().cpu().item()),
+        }
+        return entity_gates
 
     def relation_embedding(self, relation_ids: torch.Tensor) -> torch.Tensor:
         id_emb = self.relation_id_emb(relation_ids)
-        if self.ablation_mode in {"discrete_relation", "id_only"}:
+        if self.ablation_mode in {"discrete_relation", "id_only", "no_relation_aware", "relation_id_only"}:
             return self.relation_norm(id_emb)
 
-        type_emb = self.relation_type_emb(self.relation_type_ids[relation_ids])
+        type_gate = torch.sigmoid(self.raw_relation_type_gate)
+        type_emb = type_gate * self.relation_type_emb(self.relation_type_ids[relation_ids])
         if self.ablation_mode in {"no_relation_strength", "id_only"}:
             strength_emb = torch.zeros_like(type_emb)
         else:
-            strength_emb = self.relation_strength_projector(self.relation_strengths[relation_ids])
-        if self.ablation_mode == "hybrid_relation":
-            return self.relation_norm(id_emb + type_emb + strength_emb)
-        return self.relation_norm(type_emb + strength_emb)
+            strength_gate = torch.sigmoid(self.raw_relation_strength_gate)
+            strength_emb = strength_gate * self.relation_strength_projector(self.relation_strengths[relation_ids])
+        return self.relation_norm(id_emb + type_emb + strength_emb)
 
     def conve_transform(self, h_emb: torch.Tensor, r_emb: torch.Tensor) -> torch.Tensor:
         h_2d = h_emb.view(-1, 1, self.emb_dim1, self.emb_dim2)
@@ -247,6 +259,22 @@ class SemanticConvE(nn.Module):
 
     def score_triples(self, h: torch.Tensor, r: torch.Tensor, t: torch.Tensor) -> torch.Tensor:
         h_emb = self.entity_embedding(h)
+        r_emb = self.relation_embedding(r)
+        t_emb = self.entity_embedding(t)
+        x = self.conve_transform(h_emb, r_emb)
+        score = torch.sum(x * t_emb, dim=1) + self.b[t]
+        return torch.sigmoid(score)
+
+    def score_tail_pairs_from_head_embeddings(
+        self,
+        h_emb: torch.Tensor,
+        r: torch.Tensor,
+        t: torch.Tensor,
+    ) -> torch.Tensor:
+        if h_emb.dim() != 2:
+            raise ValueError("h_emb must be a 2D tensor shaped [batch_size, embedding_dim]")
+        if h_emb.shape[0] != r.shape[0] or h_emb.shape[0] != t.shape[0]:
+            raise ValueError("h_emb, r, and t must contain the same number of samples")
         r_emb = self.relation_embedding(r)
         t_emb = self.entity_embedding(t)
         x = self.conve_transform(h_emb, r_emb)

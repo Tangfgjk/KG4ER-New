@@ -114,6 +114,10 @@ def command_test(args: argparse.Namespace, graph_path: Path, seed_dir: Path, abl
         args.cuda,
         "--ablation",
         ablation,
+        "--forgetting-score-weight",
+        str(args.forgetting_score_weight),
+        "--forgetting-exercise-batch-size",
+        str(args.forgetting_exercise_batch_size),
     ]
 
 
@@ -254,6 +258,8 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--top-k-rec", type=int, default=10)
     parser.add_argument("--delta-1", type=float, default=0.8)
     parser.add_argument("--delta-2", type=float, default=0.8)
+    parser.add_argument("--forgetting-score-weight", type=float, default=0.2)
+    parser.add_argument("--forgetting-exercise-batch-size", type=int, default=256)
     parser.add_argument("--top-ks", default=",".join(str(k) for k in DEFAULT_TOP_KS))
     parser.add_argument("--ep-top-k", type=int, default=10)
     parser.add_argument("--skip-validation", action="store_true")
@@ -269,6 +275,10 @@ def main() -> None:
     if invalid_ablations:
         raise ValueError(f"Unknown ablations: {','.join(invalid_ablations)}")
     args.top_ks = parse_top_ks(args.top_ks)
+    if args.forgetting_score_weight < 0:
+        raise ValueError("--forgetting-score-weight must be non-negative")
+    if args.forgetting_exercise_batch_size <= 0:
+        raise ValueError("--forgetting-exercise-batch-size must be positive")
     run_dir = run_dir_for(args)
     base_graph_path = graph_path_for_dataset(args.dataset, args.data_root)
     run_dir.mkdir(parents=True, exist_ok=True)
@@ -302,6 +312,8 @@ def main() -> None:
             "top_k_rec": args.top_k_rec,
             "delta_1": args.delta_1,
             "delta_2": args.delta_2,
+            "forgetting_score_weight": args.forgetting_score_weight,
+            "forgetting_exercise_batch_size": args.forgetting_exercise_batch_size,
             "include_test_triples": not args.exclude_test_triples,
             "model_version": MODEL_VERSION,
             "env": python_env_info(),
