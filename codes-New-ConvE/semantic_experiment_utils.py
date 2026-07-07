@@ -12,13 +12,19 @@ from pathlib import Path
 from typing import Any, Iterable, List, Sequence
 
 
-MODEL_VERSION = "semantic_conve_v5_id_anchored_gated_fusion"
+MODEL_VERSION = "semantic_conve_v6_state_aware_continuous_relation"
 
 VALID_ABLATIONS = [
     "full",
+    "full_state_hybrid",
+    "irt_only_ped",
+    "stat_only_ped",
+    "no_irt",
+    "no_stat_ped",
     "no_mastery",
     "no_forgetting",
     "no_seq",
+    "id_head_reference",
     "no_content_entity",
     "no_relation_aware",
     "no_type_aware_scoring",
@@ -38,10 +44,11 @@ VALID_ABLATIONS = [
 GRAPH_ABLATIONS = ["no_mastery", "no_forgetting", "no_seq"]
 
 DEFAULT_ALL_ABLATIONS = [
-    "full",
-    "no_content_entity",
-    "no_relation_aware",
-    "no_type_aware_scoring",
+    "full_state_hybrid",
+    "irt_only_ped",
+    "stat_only_ped",
+    "no_irt",
+    "no_stat_ped",
     "no_mastery",
     "no_forgetting",
     "no_seq",
@@ -137,7 +144,7 @@ def parse_top_ks(value: str | Sequence[int]) -> List[int]:
 
 
 def ablation_model_dir(ablation: str) -> str:
-    if ablation == "full":
+    if ablation in {"full", "full_state_hybrid"}:
         return "SemanticConvE"
     return f"SemanticConvE_{ablation}"
 

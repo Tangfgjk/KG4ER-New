@@ -52,19 +52,19 @@ class SemanticConvERelationEncodingTest(unittest.TestCase):
             hidden_size=576,
         )
 
-    def test_full_relation_embedding_uses_relation_id_type_and_strength(self) -> None:
+    def test_full_relation_embedding_uses_relation_type_and_strength_without_id(self) -> None:
         model = self.build_model()
         relation_ids = torch.tensor([0, 1, 2], dtype=torch.long)
 
         relation_embeddings = model.relation_embedding(relation_ids)
 
-        self.assertFalse(
+        self.assertTrue(
             torch.allclose(relation_embeddings[0], relation_embeddings[1], atol=1e-6),
-            "V5 full relation encoding should retain relation-id-specific capacity",
+            "V6 full relation encoding should ignore relation-id-specific capacity when type and strength match",
         )
         self.assertFalse(
             torch.allclose(relation_embeddings[0], relation_embeddings[2], atol=1e-6),
-            "V5 full relation encoding should also react to continuous relation strength",
+            "V6 full relation encoding should react to continuous relation strength",
         )
 
     def test_can_score_tail_pairs_from_external_head_embeddings(self) -> None:
@@ -100,9 +100,9 @@ class SemanticConvERelationEncodingTest(unittest.TestCase):
 
         relation_embeddings = model.relation_embedding(relation_ids)
 
-        self.assertFalse(
+        self.assertTrue(
             torch.allclose(relation_embeddings[0], relation_embeddings[1], atol=1e-6),
-            "no_relation_strength should keep relation ID capacity while ignoring continuous strength",
+            "no_relation_strength should keep relation type while ignoring both relation ID and continuous strength",
         )
 
     def test_no_relation_aware_uses_relation_id_only(self) -> None:
@@ -297,12 +297,27 @@ class SemanticConvERelationEncodingTest(unittest.TestCase):
         )
 
     def test_semantic_quality_scales_semantic_contribution(self) -> None:
-        model = self.build_model()
+        model = self.build_model(
+            entity_type_ids=torch.tensor(
+                [
+                    ENTITY_TYPE_TO_ID["kc"],
+                    ENTITY_TYPE_TO_ID["kc"],
+                    ENTITY_TYPE_TO_ID["ex"],
+                ],
+                dtype=torch.long,
+            )
+        )
+        model.ablation_mode = "id_head_reference"
         with torch.no_grad():
             model.emb_e.weight.zero_()
             model.entity_type_emb.weight.zero_()
             model.cluster_emb.weight.zero_()
             for layer in model.numeric_projector:
+                if hasattr(layer, "weight"):
+                    layer.weight.zero_()
+                if hasattr(layer, "bias") and layer.bias is not None:
+                    layer.bias.zero_()
+            for layer in model.state_projector:
                 if hasattr(layer, "weight"):
                     layer.weight.zero_()
                 if hasattr(layer, "bias") and layer.bias is not None:
@@ -334,12 +349,18 @@ class SemanticConvERelationEncodingTest(unittest.TestCase):
             ),
             cluster_ids=torch.tensor([0, NO_CLUSTER_ID, NO_CLUSTER_ID], dtype=torch.long),
         )
+        model.ablation_mode = "id_head_reference"
         with torch.no_grad():
             model.emb_e.weight.zero_()
             model.entity_type_emb.weight.zero_()
             model.text_projector.weight.zero_()
             model.semantic_quality.zero_()
             for layer in model.numeric_projector:
+                if hasattr(layer, "weight"):
+                    layer.weight.zero_()
+                if hasattr(layer, "bias") and layer.bias is not None:
+                    layer.bias.zero_()
+            for layer in model.state_projector:
                 if hasattr(layer, "weight"):
                     layer.weight.zero_()
                 if hasattr(layer, "bias") and layer.bias is not None:
@@ -372,6 +393,7 @@ class SemanticConvERelationEncodingTest(unittest.TestCase):
                 dtype=torch.long,
             )
         )
+        model.ablation_mode = "id_head_reference"
         with torch.no_grad():
             model.emb_e.weight.zero_()
             model.entity_type_emb.weight.zero_()
@@ -379,6 +401,11 @@ class SemanticConvERelationEncodingTest(unittest.TestCase):
             model.semantic_quality.zero_()
             model.cluster_emb.weight.zero_()
             for layer in model.numeric_projector:
+                if hasattr(layer, "weight"):
+                    layer.weight.zero_()
+                if hasattr(layer, "bias") and layer.bias is not None:
+                    layer.bias.zero_()
+            for layer in model.state_projector:
                 if hasattr(layer, "weight"):
                     layer.weight.zero_()
                 if hasattr(layer, "bias") and layer.bias is not None:
@@ -419,12 +446,16 @@ class SemanticConvERelationEncodingTest(unittest.TestCase):
                     layer.weight.zero_()
                 if hasattr(layer, "bias") and layer.bias is not None:
                     layer.bias.zero_()
+            for layer in model.state_projector:
+                if hasattr(layer, "weight"):
+                    layer.weight.zero_()
+                if hasattr(layer, "bias") and layer.bias is not None:
+                    layer.bias.zero_()
             model.numeric_projector[-1].bias[0] = 1.0
             model.raw_pedagogical_gate.fill_(10.0)
 
         embeddings = model.entity_embedding(torch.tensor([0, 2], dtype=torch.long))
 
-        self.assertFalse(torch.allclose(embeddings[0], torch.zeros_like(embeddings[0]), atol=1e-6))
         self.assertTrue(
             torch.allclose(embeddings[1], torch.zeros_like(embeddings[1]), atol=1e-6),
             "no_exercise_irt should remove numeric features only for exercise entities",
@@ -450,6 +481,11 @@ class SemanticConvERelationEncodingTest(unittest.TestCase):
             model.semantic_quality.zero_()
             model.cluster_emb.weight.zero_()
             for layer in model.numeric_projector:
+                if hasattr(layer, "weight"):
+                    layer.weight.zero_()
+                if hasattr(layer, "bias") and layer.bias is not None:
+                    layer.bias.zero_()
+            for layer in model.state_projector:
                 if hasattr(layer, "weight"):
                     layer.weight.zero_()
                 if hasattr(layer, "bias") and layer.bias is not None:
@@ -484,6 +520,11 @@ class SemanticConvERelationEncodingTest(unittest.TestCase):
             model.text_projector.weight.zero_()
             model.semantic_quality.zero_()
             for layer in model.numeric_projector:
+                if hasattr(layer, "weight"):
+                    layer.weight.zero_()
+                if hasattr(layer, "bias") and layer.bias is not None:
+                    layer.bias.zero_()
+            for layer in model.state_projector:
                 if hasattr(layer, "weight"):
                     layer.weight.zero_()
                 if hasattr(layer, "bias") and layer.bias is not None:

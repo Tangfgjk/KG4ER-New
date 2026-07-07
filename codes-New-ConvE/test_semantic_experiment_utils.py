@@ -43,8 +43,8 @@ class SemanticExperimentUtilsTest(unittest.TestCase):
             self.assertTrue((graph_path / "entities.dict").exists())
 
     def test_model_version_marks_continuous_relation_encoding(self) -> None:
-        self.assertIn("v5", MODEL_VERSION)
-        self.assertIn("id_anchored", MODEL_VERSION)
+        self.assertIn("v6", MODEL_VERSION)
+        self.assertIn("state_aware", MODEL_VERSION)
 
     def test_ablation_model_dir_keeps_full_backward_compatible(self) -> None:
         self.assertEqual(ablation_model_dir("full"), "SemanticConvE")
@@ -58,10 +58,11 @@ class SemanticExperimentUtilsTest(unittest.TestCase):
         self.assertEqual(
             ablations,
             [
-                "full",
-                "no_content_entity",
-                "no_relation_aware",
-                "no_type_aware_scoring",
+                "full_state_hybrid",
+                "irt_only_ped",
+                "stat_only_ped",
+                "no_irt",
+                "no_stat_ped",
                 "no_mastery",
                 "no_forgetting",
                 "no_seq",

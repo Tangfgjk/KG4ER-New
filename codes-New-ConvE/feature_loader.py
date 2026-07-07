@@ -30,12 +30,15 @@ class SemanticFeatureBundle:
     id2relation: Dict[int, str]
     text_features: torch.Tensor
     numeric_features: torch.Tensor
+    state_features: torch.Tensor
     entity_type_ids: torch.Tensor
     cluster_ids: torch.Tensor
     semantic_quality: torch.Tensor
     relation_type_ids: torch.Tensor
     relation_strengths: torch.Tensor
     exercise_entity_ids: torch.Tensor
+    numeric_feature_slices: Dict[str, Tuple[int, int]]
+    state_feature_slices: Dict[str, Tuple[int, int]]
     metadata: Dict[str, Any]
 
     @property
@@ -232,6 +235,31 @@ def _learner_numeric(item: Dict[str, Any]) -> List[float]:
     ]
 
 
+def _learner_irt_numeric(item: Dict[str, Any]) -> List[float]:
+    return [
+        _as_float(item.get("theta_norm"), 0.5),
+        _as_float(item.get("overall_mastery_irt"), 0.5),
+    ]
+
+
+def _learner_stat_numeric(item: Dict[str, Any]) -> List[float]:
+    concept_mean = _as_float(
+        item.get("concept_mastery_mean_from_interactions", item.get("concept_mastery_mean")),
+        0.5,
+    )
+    concept_std = _as_float(
+        item.get("concept_mastery_std_from_interactions", item.get("concept_mastery_std")),
+        0.0,
+    )
+    return [
+        _as_float(item.get("overall_mastery_kt_mean"), 0.0),
+        _as_float(item.get("correct_rate"), 0.0),
+        _log_count(item.get("history_length")),
+        concept_mean,
+        concept_std,
+    ]
+
+
 def _exercise_numeric(item: Dict[str, Any]) -> List[float]:
     return [
         _as_float(item.get("difficulty_norm"), 0.5),
@@ -244,8 +272,56 @@ def _exercise_numeric(item: Dict[str, Any]) -> List[float]:
     ]
 
 
-def _concept_numeric() -> List[float]:
-    return [0.0] * 7
+def _exercise_irt_numeric(item: Dict[str, Any]) -> List[float]:
+    return [
+        _as_float(item.get("difficulty_norm"), 0.5),
+        _as_float(item.get("discrimination_norm"), 0.0),
+    ]
+
+
+def _exercise_stat_numeric(item: Dict[str, Any]) -> List[float]:
+    correct_rate = _as_float(item.get("correct_rate"), 0.0)
+    error_rate = _as_float(item.get("error_rate"), 1.0 - correct_rate)
+    high_error = _as_float(item.get("high_group_error_rate"), 0.0)
+    low_error = _as_float(item.get("low_group_error_rate"), 0.0)
+    return [
+        correct_rate,
+        error_rate,
+        _log_count(item.get("interaction_count")),
+        _as_float(item.get("high_low_gap"), max(0.0, low_error - high_error)),
+        high_error,
+        low_error,
+        _as_float(item.get("mastery_response_corr"), 0.0),
+    ]
+
+
+def _concept_numeric(width: int) -> List[float]:
+    return [0.0] * width
+
+
+def _read_state_matrix(data_path: Path, name: str) -> List[List[float]]:
+    path = data_path / name
+    if not path.exists():
+        return []
+    payload = read_json(path)
+    if not isinstance(payload, list):
+        return []
+    return [[_as_float(value, 0.0) for value in row] for row in payload if isinstance(row, list)]
+
+
+def _safe_state_row(matrix: List[List[float]], index: int, width: int) -> List[float]:
+    if 0 <= index < len(matrix):
+        row = list(matrix[index])
+        if len(row) >= width:
+            return row[:width]
+        return row + [0.0] * (width - len(row))
+    return [0.0] * width
+
+
+def _uid_index(entity_name: str) -> int | None:
+    if entity_name.startswith("uid") and entity_name[3:].isdigit():
+        return int(entity_name[3:])
+    return None
 
 
 def load_semantic_feature_bundle(
@@ -267,9 +343,47 @@ def load_semantic_feature_bundle(
     learner_data = read_json(entity_dir / "learner_pedagogy.json").get("learners", {})
     exercise_irt = read_json(irt_dir / "exercise_irt_features.json").get("exercises", {})
 
+    learner_irt_width = 2
+    exercise_irt_width = 2
+    irt_width = learner_irt_width + exercise_irt_width
+    learner_stat_width = 5
+    exercise_stat_width = 7
+    stat_width = learner_stat_width + exercise_stat_width
+    numeric_width = irt_width + stat_width
+    numeric_slices = {
+        "learner_irt": (0, learner_irt_width),
+        "exercise_irt": (learner_irt_width, irt_width),
+        "learner_stat": (irt_width, irt_width + learner_stat_width),
+        "exercise_stat": (irt_width + learner_stat_width, numeric_width),
+    }
+
+    mastery_matrix = _read_state_matrix(data_path, "stu2know_mastery.json")
+    sequence_matrix = _read_state_matrix(data_path, "stu2know_seq.json")
+    forget_matrix = _read_state_matrix(data_path, "stu2know_forget.json")
+    knowledge_width = 0
+    for matrix in (mastery_matrix, sequence_matrix, forget_matrix):
+        if matrix:
+            knowledge_width = max(knowledge_width, len(matrix[0]))
+    state_slices = {
+        "mastery": (0, knowledge_width),
+        "sequence": (knowledge_width, knowledge_width * 2),
+        "forgetting": (knowledge_width * 2, knowledge_width * 3),
+        "learner_irt": (knowledge_width * 3, knowledge_width * 3 + learner_irt_width),
+        "learner_stat": (
+            knowledge_width * 3 + learner_irt_width,
+            knowledge_width * 3 + learner_irt_width + learner_stat_width,
+        ),
+        "cluster": (
+            knowledge_width * 3 + learner_irt_width + learner_stat_width,
+            knowledge_width * 3 + learner_irt_width + learner_stat_width + 1,
+        ),
+    }
+    state_width = state_slices["cluster"][1]
+
     nentity = len(entity2id)
     text_array = np.zeros((nentity, text_dim), dtype=np.float32)
-    numeric_array = np.zeros((nentity, 7), dtype=np.float32)
+    numeric_array = np.zeros((nentity, numeric_width), dtype=np.float32)
+    state_array = np.zeros((nentity, state_width), dtype=np.float32)
     type_array = np.zeros((nentity,), dtype=np.int64)
     cluster_array = np.full((nentity,), NO_CLUSTER_ID, dtype=np.int64)
     semantic_quality_array = np.zeros((nentity, 1), dtype=np.float32)
@@ -285,12 +399,52 @@ def load_semantic_feature_bundle(
         semantic_quality_array[entity_id, 0] = infer_semantic_quality(feature_item, entity_name)
         if kind == "uid":
             item = learner_data.get(entity_name, {})
-            numeric_array[entity_id] = np.asarray(_learner_numeric(item), dtype=np.float32)
+            learner_irt = _learner_irt_numeric(item)
+            learner_stat = _learner_stat_numeric(item)
+            numeric_array[entity_id, numeric_slices["learner_irt"][0] : numeric_slices["learner_irt"][1]] = np.asarray(
+                learner_irt,
+                dtype=np.float32,
+            )
+            numeric_array[entity_id, numeric_slices["learner_stat"][0] : numeric_slices["learner_stat"][1]] = np.asarray(
+                learner_stat,
+                dtype=np.float32,
+            )
             cluster_array[entity_id] = int(item.get("cluster_id", NO_CLUSTER_ID))
+            uid_idx = _uid_index(entity_name)
+            if uid_idx is not None:
+                state_array[entity_id, state_slices["mastery"][0] : state_slices["mastery"][1]] = np.asarray(
+                    _safe_state_row(mastery_matrix, uid_idx, knowledge_width),
+                    dtype=np.float32,
+                )
+                state_array[entity_id, state_slices["sequence"][0] : state_slices["sequence"][1]] = np.asarray(
+                    _safe_state_row(sequence_matrix, uid_idx, knowledge_width),
+                    dtype=np.float32,
+                )
+                state_array[entity_id, state_slices["forgetting"][0] : state_slices["forgetting"][1]] = np.asarray(
+                    _safe_state_row(forget_matrix, uid_idx, knowledge_width),
+                    dtype=np.float32,
+                )
+            state_array[entity_id, state_slices["learner_irt"][0] : state_slices["learner_irt"][1]] = np.asarray(
+                learner_irt,
+                dtype=np.float32,
+            )
+            state_array[entity_id, state_slices["learner_stat"][0] : state_slices["learner_stat"][1]] = np.asarray(
+                learner_stat,
+                dtype=np.float32,
+            )
+            state_array[entity_id, state_slices["cluster"][0]] = _clamp01(cluster_array[entity_id] / max(1, NO_CLUSTER_ID - 1))
         elif kind == "ex":
-            numeric_array[entity_id] = np.asarray(_exercise_numeric(exercise_irt.get(entity_name, {})), dtype=np.float32)
+            item = exercise_irt.get(entity_name, {})
+            numeric_array[entity_id, numeric_slices["exercise_irt"][0] : numeric_slices["exercise_irt"][1]] = np.asarray(
+                _exercise_irt_numeric(item),
+                dtype=np.float32,
+            )
+            numeric_array[entity_id, numeric_slices["exercise_stat"][0] : numeric_slices["exercise_stat"][1]] = np.asarray(
+                _exercise_stat_numeric(item),
+                dtype=np.float32,
+            )
         elif kind == "kc":
-            numeric_array[entity_id] = np.asarray(_concept_numeric(), dtype=np.float32)
+            numeric_array[entity_id] = np.asarray(_concept_numeric(numeric_width), dtype=np.float32)
 
     nrelation = len(relation2id)
     relation_type_array = np.zeros((nrelation,), dtype=np.int64)
@@ -311,25 +465,41 @@ def load_semantic_feature_bundle(
         id2relation=id2relation,
         text_features=torch.tensor(text_array, dtype=torch.float32, device=device),
         numeric_features=torch.tensor(numeric_array, dtype=torch.float32, device=device),
+        state_features=torch.tensor(state_array, dtype=torch.float32, device=device),
         entity_type_ids=torch.tensor(type_array, dtype=torch.long, device=device),
         cluster_ids=torch.tensor(cluster_array, dtype=torch.long, device=device),
         semantic_quality=torch.tensor(semantic_quality_array, dtype=torch.float32, device=device),
         relation_type_ids=torch.tensor(relation_type_array, dtype=torch.long, device=device),
         relation_strengths=torch.tensor(relation_strength_array, dtype=torch.float32, device=device),
         exercise_entity_ids=torch.tensor(exercise_ids, dtype=torch.long, device=device),
+        numeric_feature_slices=numeric_slices,
+        state_feature_slices=state_slices,
         metadata={
             "data_path": str(data_path),
             "feature_dir": str(feature_dir_path),
             "text_manifest": text_manifest,
             "numeric_feature_names": [
-                "theta_or_difficulty_norm",
-                "irt_mastery_or_discrimination_norm",
-                "kt_mastery_mean_or_correct_rate",
-                "correct_rate_or_log_interaction_count",
-                "log_history_length",
-                "concept_mastery_mean",
-                "concept_mastery_std",
+                "learner_theta_norm",
+                "learner_overall_mastery_irt",
+                "exercise_difficulty_norm",
+                "exercise_discrimination_norm",
+                "learner_overall_mastery_kt_mean",
+                "learner_correct_rate",
+                "learner_log_history_length",
+                "learner_concept_mastery_mean",
+                "learner_concept_mastery_std",
+                "exercise_correct_rate",
+                "exercise_error_rate",
+                "exercise_log_interaction_count",
+                "exercise_high_low_gap",
+                "exercise_high_group_error_rate",
+                "exercise_low_group_error_rate",
+                "exercise_mastery_response_corr",
             ],
+            "numeric_feature_slices": numeric_slices,
+            "state_feature_slices": state_slices,
+            "state_feature_dim": int(state_width),
+            "knowledge_state_width": int(knowledge_width),
             "entity_type_to_id": ENTITY_TYPE_TO_ID,
             "relation_type_to_id": RELATION_TYPE_TO_ID,
             "no_cluster_id": NO_CLUSTER_ID,

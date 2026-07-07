@@ -2,7 +2,15 @@
 
 This repository contains the portable training, testing, evaluation, and ablation code for the SemanticConvE exercise recommendation model.
 
-Current version: **V4 fine-grained ablation**. Compared with V3.1, V4 keeps masked gated fusion and adds fine-grained ablations for concept semantics, exercise semantics, exercise IRT features, learner IRT features, learner clusters, and relation representation variants (`discrete_relation` and `hybrid_relation`). The one-command runner supports `--ablations all` to run the full model and all ablations together.
+Current version: **V6 state-aware continuous-relation SemanticConvE**.
+
+V6 adds:
+
+- state-aware learner encoder: learner entities are represented by cognitive state features rather than a learned `uid` ID embedding;
+- continuous relation encoding: relations use `relation type + continuous strength` instead of relation ID embedding in the full model;
+- statistical pedagogical features for comparing IRT-based and statistics-based educational signals;
+- evaluation separation: `test_triples.txt` is used for evaluation by default, not for training;
+- an 8-experiment V6 suite through `--ablations all`.
 
 Data files are not included. To run experiments on a new computer, clone this repository and copy the prepared dataset folders into:
 
@@ -13,7 +21,7 @@ data/
 The expected dataset structure is documented in:
 
 ```text
-docs-for-git/RUN_COMMANDS.md
+docs-for-git/SemanticConvE-V6运行命令.md
 ```
 
-The code is designed to preserve the existing `score(uid, rec, exercise)` experiment flow while adding gated semantic/pedagogical feature fusion, cognitive-factor ablations, fine-grained feature ablations, and relation-representation ablations.
+The code is designed to support `score(StateEncoder(uid_state), rec, exercise)` while keeping the existing KG4ER graph files and experiment runner interfaces.

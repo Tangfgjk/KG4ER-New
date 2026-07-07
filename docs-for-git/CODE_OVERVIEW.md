@@ -1,173 +1,73 @@
-# KG4ER-New Code Overview
+# KG4ER-New V6 Code Overview
 
-This document introduces the code uploaded to the `KG4ER-New` repository. The repository contains only the code required for SemanticConvE training, testing, evaluation, result summarization, and ablation experiments. Dataset files and generated results are intentionally excluded.
+This branch contains the portable code for **SemanticConvE V6**. Dataset files, model checkpoints, and run outputs are intentionally excluded.
 
-Current code branch: **V4 fine-grained ablation**.
+## Core Changes In V6
 
-## 1. Repository Structure
+| Area | V6 behavior |
+|---|---|
+| Learner representation | Learner entities use `StateEncoder(state(uid))` instead of relying on learned `uid` ID embedding. |
+| Relation representation | Full model uses `relation type + continuous strength`; relation ID embedding is not used in the full model. |
+| Educational features | Loader separates IRT features and statistical pedagogical features for controlled ablations. |
+| Train/test split | `test_triples.txt` is evaluation-only by default. It is not added to training unless `--include-test-triples` is explicitly passed. |
+| Scoring | Recommendation still scores exercise candidates only through type-aware ConvE scoring. |
 
-```text
-KG4ER-New/
-  codes-New-ConvE/
-    feature_loader.py
-    semantic_conve_model.py
-    run_semantic_conve.py
-    test_semantic_conve.py
-    run_semantic_experiments.py
-    summarize_semantic_results.py
-    validate_semantic_ready.py
-    semantic_ablation_data.py
-    evaluate_recommendations.py
-    ep_sim.py
-    experiment_utils.py
-  docs-for-git/
-    CODE_OVERVIEW.md
-    RUN_COMMANDS.md
-    ABLATION_EXPERIMENTS.md
-  requirements.txt
-  README.md
-  .gitignore
-```
-
-## 2. Core Scripts
+## Main Files
 
 | File | Purpose |
-| --- | --- |
-| `feature_loader.py` | Loads entity IDs, relation IDs, semantic text embeddings, pedagogical numeric features, entity types, learner clusters, semantic-quality priors, relation types, and continuous relation strengths. |
-| `semantic_conve_model.py` | Defines SemanticConvE with type-aware gated semantic/pedagogical entity fusion, continuous relation-aware encoding, and type-aware tail scoring. |
-| `run_semantic_conve.py` | Trains one SemanticConvE model for one dataset, one seed, and one ablation setting. |
-| `test_semantic_conve.py` | Loads a trained checkpoint and exports learner-exercise recommendation scores. |
-| `run_semantic_experiments.py` | One-command runner: validation, training, testing, evaluation, logs, checkpointing, and resume. |
-| `summarize_semantic_results.py` | Aggregates per-seed metrics and outputs paper-ready tables. |
-| `validate_semantic_ready.py` | Checks whether prepared data and semantic features are ready before training. |
-| `semantic_ablation_data.py` | Builds independent graph data for cognitive-factor ablations. |
-| `evaluate_recommendations.py` | Computes ACC, NOV, and Ep_sim from exported recommendation scores. |
+|---|---|
+| `codes-New-ConvE/feature_loader.py` | Loads entities, relations, text embeddings, IRT/statistical features, state features, relation types, and relation strengths. |
+| `codes-New-ConvE/semantic_conve_model.py` | Defines SemanticConvE V6, including StateEncoder, gated entity features, continuous relation encoding, and type-aware scoring. |
+| `codes-New-ConvE/run_semantic_conve.py` | Trains one model for one dataset, one seed, and one ablation. |
+| `codes-New-ConvE/test_semantic_conve.py` | Exports learner-exercise recommendation scores from a trained checkpoint. |
+| `codes-New-ConvE/run_semantic_experiments.py` | One-command train/test/evaluate runner with resume support. |
+| `codes-New-ConvE/summarize_semantic_results.py` | Aggregates five-seed metrics and gate values. |
+| `codes-New-ConvE/semantic_ablation_data.py` | Builds independent graph variants for `no_mastery`, `no_forgetting`, and `no_seq`. |
+| `codes-New-ConvE/evaluate_recommendations.py` | Computes ACC, NOV, and Ep_sim from exported scores. |
+| `codes-New-ConvE/validate_semantic_ready.py` | Checks whether the copied dataset contains all required graph and semantic feature files. |
 
-## 3. Model Components
+## V6 Representation
 
-SemanticConvE V4 uses:
+Learner representation:
 
 ```text
-entity representation =
-ID embedding
-+ entity type embedding
-+ gate_sem[type] * semantic_quality(entity) * text semantic embedding
-+ mask_ped(type) * gate_ped[type] * pedagogical numeric embedding
-+ mask_cluster(type) * gate_cluster[type] * learner cluster embedding
+h_uid = StateEncoder([
+  stu2know_mastery,
+  stu2know_seq,
+  stu2know_forget,
+  learner IRT features,
+  learner statistical features,
+  learner cluster feature
+])
 ```
 
-where `mask_ped(type)` is 1 only for learner and exercise entities, and
-`mask_cluster(type)` is 1 only for learner entities. This avoids injecting
-learner-cluster or numeric-projector bias into concept/exercise entities that
-do not own those features.
-
-and:
+Relation representation:
 
 ```text
-relation representation =
-relation type embedding
-+ projected continuous relation strength
+r = LayerNorm(type_embedding(relation_type) + gate * MLP(continuous_strength))
 ```
 
-V4 also supports relation-representation variants:
+Recommendation score:
 
 ```text
-discrete_relation: relation ID embedding
-hybrid_relation:   relation ID embedding + relation type embedding + projected relation strength
+score(uid, rec, ex)
+= sigmoid(ConvETransform(h_uid, r_rec)^T h_ex + b_ex)
 ```
 
-At recommendation time, the model scores only exercise entities:
+## Default V6 Ablations
+
+`--ablations all` expands to:
 
 ```text
-score(uid, rec, exercise)
-```
-
-The gate values are learned during training and exported to:
-
-```text
-runs/{dataset}/{run_id}/SemanticConvE/seed{seed}/gate_values.json
-```
-
-The result summarizer also outputs:
-
-```text
-runs/{dataset}/{run_id}/summary/gate_values_per_seed.csv
-runs/{dataset}/{run_id}/summary/gate_values_mean_std.csv
-```
-
-## 4. V4 Changes Compared with V2/V3/V3.1
-
-| Area | V2 | V3 | V3.1 | V4 |
-| --- | --- | --- | --- | --- |
-| Entity fusion | Direct addition of ID, semantic, pedagogical, type, and cluster embeddings | Type-aware gated fusion after semantic/numeric projection | Type-aware gated fusion with entity-type masks | Kept unchanged |
-| Semantic reliability | All available text embeddings contributed equally | Each entity has a fixed `semantic_quality` prior based on semantic source | Kept unchanged | Kept unchanged |
-| Gate initialization | Not used | Gate sigmoid initialized at 0.5 | Gate sigmoid initialized at 0.1 | Kept unchanged |
-| Numeric counts | Raw log-count feature | Raw log-count feature | Log-count scaled into `[0, 1]` | Kept unchanged |
-| Cluster feature | Directly fused | Gated but kept a non-learner placeholder vector | Applied only to learner entities | Adds `no_cluster` ablation |
-| Pedagogical numeric feature | Directly fused | Gated for every entity type | Applied only to learner and exercise entities | Adds learner/exercise IRT ablations |
-| Semantic feature | Directly fused | Gated by entity type and quality prior | Kept unchanged | Adds concept/exercise semantic ablations |
-| Relation encoding | Continuous relation type + strength | Kept unchanged | Kept unchanged | Adds `discrete_relation` and `hybrid_relation` variants |
-| Explainable diagnostics | Only recommendation explanations and metrics | Adds learned gate values for semantic, pedagogical, and cluster contributions | Kept unchanged | Kept unchanged |
-| Recommendation scoring | `score(uid, rec, exercise)` over exercise tails | Kept unchanged | Kept unchanged | Kept unchanged |
-
-## 5. Supported Ablations
-
-The code supports:
-
-```text
-full
+full_state_hybrid
+irt_only_ped
+stat_only_ped
+no_irt
+no_stat_ped
 no_mastery
 no_forgetting
 no_seq
-no_semantic
-no_concept_semantic
-no_exercise_semantic
-no_pedagogical
-no_exercise_irt
-no_learner_irt
-no_cluster
-no_relation_strength
-discrete_relation
-hybrid_relation
-id_only
 ```
 
-Use the shortcut below to run the full model and every ablation:
+See `docs-for-git/SemanticConvE-V6运行命令.md` for full commands.
 
-```powershell
---ablations all
-```
-
-The cognitive-factor ablations generate independent graph data:
-
-| Ablation | Recommendation terms | Removed relation |
-| --- | --- | --- |
-| `no_mastery` | forgetting + sequence | `mlkc` |
-| `no_forgetting` | mastery + sequence | `exfr` |
-| `no_seq` | mastery + forgetting | `pkc` |
-
-The model-component ablations use the full graph and only disable model inputs:
-
-| Ablation | Disabled component |
-| --- | --- |
-| `no_semantic` | text semantic embeddings |
-| `no_concept_semantic` | concept-name and concept-definition semantic embeddings |
-| `no_exercise_semantic` | exercise text or structured exercise semantic embeddings |
-| `no_pedagogical` | IRT/pedagogical numeric features and learner cluster |
-| `no_exercise_irt` | exercise difficulty, discrimination, correct rate, and interaction-count features |
-| `no_learner_irt` | learner ability, mastery, correctness, history-length, and concept-mastery features |
-| `no_cluster` | learner cluster embedding only |
-| `no_relation_strength` | continuous relation strength |
-| `discrete_relation` | uses relation ID embedding only |
-| `hybrid_relation` | uses relation ID + relation type + continuous strength |
-| `id_only` | semantic, pedagogical, entity type, cluster, and relation strength components |
-
-## 6. Data Assumption
-
-The repository does not contain data. Copy prepared datasets into:
-
-```text
-KG4ER-New/data/
-```
-
-Each dataset should already contain KG graph files, KT outputs, IRT features, semantic features, and text embeddings. The validation script checks this before training.
