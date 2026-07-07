@@ -12,7 +12,7 @@ from pathlib import Path
 from typing import Any, Iterable, List, Sequence
 
 
-MODEL_VERSION = "semantic_conve_v5_id_anchored_gated_fusion"
+MODEL_VERSION = "semantic_conve_v5_stat_no_kc_extra"
 
 VALID_ABLATIONS = [
     "full",
@@ -32,6 +32,7 @@ VALID_ABLATIONS = [
     "no_relation_strength",
     "discrete_relation",
     "hybrid_relation",
+    "concept_extra",
     "id_only",
 ]
 
@@ -39,6 +40,7 @@ GRAPH_ABLATIONS = ["no_mastery", "no_forgetting", "no_seq"]
 
 DEFAULT_ALL_ABLATIONS = [
     "full",
+    "concept_extra",
     "no_content_entity",
     "no_relation_aware",
     "no_type_aware_scoring",

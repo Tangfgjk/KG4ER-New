@@ -31,6 +31,7 @@ VALID_MODEL_ABLATIONS = {
     "no_relation_strength",
     "discrete_relation",
     "hybrid_relation",
+    "concept_extra",
     "id_only",
 }
 
@@ -204,7 +205,11 @@ class SemanticConvE(nn.Module):
             cluster_gate = torch.sigmoid(self.raw_cluster_gate[type_ids]).unsqueeze(-1)
             cluster_mask = (type_ids == ENTITY_TYPE_TO_ID["uid"]).float().unsqueeze(-1)
             cluster_emb = cluster_mask * cluster_gate * cluster_emb
-        return self.entity_norm(id_emb + semantic_emb + pedagogical_emb + type_emb + cluster_emb)
+        combined = id_emb + semantic_emb + pedagogical_emb + type_emb + cluster_emb
+        if self.ablation_mode != "concept_extra":
+            concept_mask = (type_ids == ENTITY_TYPE_TO_ID["kc"]).unsqueeze(-1)
+            combined = torch.where(concept_mask, id_emb, combined)
+        return self.entity_norm(combined)
 
     def gate_values(self) -> dict[str, dict[str, float]]:
         names_by_id = {idx: name for name, idx in ENTITY_TYPE_TO_ID.items()}

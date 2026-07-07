@@ -34,6 +34,7 @@ REQUIRED_FEATURE_FILES = [
     "entity_features/exercise_semantics.json",
     "entity_features/learner_pedagogy.json",
     "irt_features/exercise_irt_features.json",
+    "stat_features/exercise_stat_features.json",
     "text_embeddings/concept_text_embeddings.npy",
     "text_embeddings/exercise_text_embeddings.npy",
     "text_embeddings/text_embedding_manifest.json",
@@ -94,6 +95,10 @@ def validate_dataset(dataset: str, data_root: Path, allow_template: bool = False
     if (feature_dir / "entity_features" / "learner_pedagogy.json").exists():
         learner_count = len(read_json(feature_dir / "entity_features" / "learner_pedagogy.json").get("learners", {}))
 
+    stat_exercise_count = 0
+    if (feature_dir / "stat_features" / "exercise_stat_features.json").exists():
+        stat_exercise_count = len(read_json(feature_dir / "stat_features" / "exercise_stat_features.json").get("exercises", {}))
+
     concept_embedding_shape = None
     exercise_embedding_shape = None
     manifest_dim = None
@@ -120,6 +125,8 @@ def validate_dataset(dataset: str, data_root: Path, allow_template: bool = False
 
     if q_count and exercise_count and q_count != exercise_count:
         errors.append(f"Q rows {q_count} != exercise semantics count {exercise_count}")
+    if q_count and stat_exercise_count and q_count != stat_exercise_count:
+        errors.append(f"Q rows {q_count} != statistical exercise feature count {stat_exercise_count}")
 
     expected_feature_dir = graph_path / "semantic_kg_features"
     if feature_dir != expected_feature_dir:
@@ -134,6 +141,7 @@ def validate_dataset(dataset: str, data_root: Path, allow_template: bool = False
         "q_exercise_count": q_count,
         "concept_count": concept_count,
         "exercise_count": exercise_count,
+        "stat_exercise_count": stat_exercise_count,
         "learner_count": learner_count,
         "definition_source_summary": definition_summary,
         "template_definition_count": template_count,

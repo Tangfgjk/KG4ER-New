@@ -243,7 +243,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--dataset", required=True)
     parser.add_argument("--run-id", default=None)
     parser.add_argument("--seeds", default="2024")
-    parser.add_argument("--ablations", default="full", help="Comma-separated ablations. Default keeps old full behavior.")
+    parser.add_argument("--ablations", default="full", help="Comma-separated ablations. Default runs the revised full model.")
     parser.add_argument("--epochs", type=int, default=25)
     parser.add_argument("--bs", type=int, default=1024)
     parser.add_argument("--learning-rate", type=float, default=0.001)

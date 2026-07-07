@@ -220,6 +220,17 @@ def _load_semantic_metadata(feature_dir: Path) -> Dict[str, Dict[str, Any]]:
     return metadata
 
 
+def _load_exercise_stat_features(feature_dir: Path) -> Dict[str, Dict[str, Any]]:
+    path = feature_dir / "stat_features" / "exercise_stat_features.json"
+    if not path.exists():
+        return {}
+    payload = read_json(path)
+    entries = payload.get("exercises", {})
+    if not isinstance(entries, dict):
+        return {}
+    return {str(entity_id): item for entity_id, item in entries.items() if isinstance(item, dict)}
+
+
 def _learner_numeric(item: Dict[str, Any]) -> List[float]:
     return [
         _as_float(item.get("theta_norm"), 0.5),
@@ -232,7 +243,7 @@ def _learner_numeric(item: Dict[str, Any]) -> List[float]:
     ]
 
 
-def _exercise_numeric(item: Dict[str, Any]) -> List[float]:
+def _exercise_irt_numeric(item: Dict[str, Any]) -> List[float]:
     return [
         _as_float(item.get("difficulty_norm"), 0.5),
         _as_float(item.get("discrimination_norm"), 0.0),
@@ -241,6 +252,18 @@ def _exercise_numeric(item: Dict[str, Any]) -> List[float]:
         0.0,
         0.0,
         0.0,
+    ]
+
+
+def _exercise_stat_numeric(item: Dict[str, Any]) -> List[float]:
+    return [
+        _as_float(item.get("difficulty_stat_norm"), 0.5),
+        _as_float(item.get("discrimination_stat_norm"), 0.0),
+        _as_float(item.get("correct_rate"), 0.0),
+        _log_count(item.get("interaction_count")),
+        _as_float(item.get("high_group_correct_rate"), 0.0),
+        _as_float(item.get("low_group_correct_rate"), 0.0),
+        _as_float(item.get("error_rate"), 0.5),
     ]
 
 
@@ -266,6 +289,7 @@ def load_semantic_feature_bundle(
     irt_dir = feature_dir_path / "irt_features"
     learner_data = read_json(entity_dir / "learner_pedagogy.json").get("learners", {})
     exercise_irt = read_json(irt_dir / "exercise_irt_features.json").get("exercises", {})
+    exercise_stat = _load_exercise_stat_features(feature_dir_path)
 
     nentity = len(entity2id)
     text_array = np.zeros((nentity, text_dim), dtype=np.float32)
@@ -273,6 +297,8 @@ def load_semantic_feature_bundle(
     type_array = np.zeros((nentity,), dtype=np.int64)
     cluster_array = np.full((nentity,), NO_CLUSTER_ID, dtype=np.int64)
     semantic_quality_array = np.zeros((nentity, 1), dtype=np.float32)
+    exercise_stat_count = 0
+    exercise_irt_fallback_count = 0
 
     for entity_name, entity_id in entity2id.items():
         kind = entity_kind(entity_name)
@@ -288,7 +314,12 @@ def load_semantic_feature_bundle(
             numeric_array[entity_id] = np.asarray(_learner_numeric(item), dtype=np.float32)
             cluster_array[entity_id] = int(item.get("cluster_id", NO_CLUSTER_ID))
         elif kind == "ex":
-            numeric_array[entity_id] = np.asarray(_exercise_numeric(exercise_irt.get(entity_name, {})), dtype=np.float32)
+            if entity_name in exercise_stat:
+                numeric_array[entity_id] = np.asarray(_exercise_stat_numeric(exercise_stat[entity_name]), dtype=np.float32)
+                exercise_stat_count += 1
+            else:
+                numeric_array[entity_id] = np.asarray(_exercise_irt_numeric(exercise_irt.get(entity_name, {})), dtype=np.float32)
+                exercise_irt_fallback_count += 1
         elif kind == "kc":
             numeric_array[entity_id] = np.asarray(_concept_numeric(), dtype=np.float32)
 
@@ -322,14 +353,20 @@ def load_semantic_feature_bundle(
             "feature_dir": str(feature_dir_path),
             "text_manifest": text_manifest,
             "numeric_feature_names": [
-                "theta_or_difficulty_norm",
-                "irt_mastery_or_discrimination_norm",
+                "theta_or_stat_difficulty_norm",
+                "irt_mastery_or_stat_discrimination_norm",
                 "kt_mastery_mean_or_correct_rate",
                 "correct_rate_or_log_interaction_count",
-                "log_history_length",
-                "concept_mastery_mean",
-                "concept_mastery_std",
+                "log_history_length_or_high_group_correct_rate",
+                "concept_mastery_mean_or_low_group_correct_rate",
+                "concept_mastery_std_or_error_rate",
             ],
+            "exercise_pedagogical_source": {
+                "preferred": "statistical",
+                "stat_count": exercise_stat_count,
+                "irt_fallback_count": exercise_irt_fallback_count,
+                "stat_feature_file": str(feature_dir_path / "stat_features" / "exercise_stat_features.json"),
+            },
             "entity_type_to_id": ENTITY_TYPE_TO_ID,
             "relation_type_to_id": RELATION_TYPE_TO_ID,
             "no_cluster_id": NO_CLUSTER_ID,

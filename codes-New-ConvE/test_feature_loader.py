@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import unittest
 
-from feature_loader import _log_count, infer_semantic_quality
+from feature_loader import _exercise_irt_numeric, _exercise_stat_numeric, _log_count, infer_semantic_quality
 
 
 class SemanticQualityInferenceTest(unittest.TestCase):
@@ -35,6 +35,38 @@ class SemanticQualityInferenceTest(unittest.TestCase):
         self.assertEqual(_log_count(0), 0.0)
         self.assertGreater(_log_count(10), 0.0)
         self.assertLessEqual(_log_count(1_000_000), 1.0)
+
+    def test_statistical_exercise_numeric_uses_stat_keys(self) -> None:
+        values = _exercise_stat_numeric(
+            {
+                "difficulty_stat_norm": 0.7,
+                "discrimination_stat_norm": 0.2,
+                "correct_rate": 0.3,
+                "interaction_count": 10,
+                "high_group_correct_rate": 0.8,
+                "low_group_correct_rate": 0.4,
+                "error_rate": 0.7,
+            }
+        )
+
+        self.assertEqual(values[0], 0.7)
+        self.assertEqual(values[1], 0.2)
+        self.assertEqual(values[4], 0.8)
+        self.assertEqual(values[5], 0.4)
+        self.assertEqual(values[6], 0.7)
+
+    def test_irt_exercise_numeric_remains_available_as_fallback(self) -> None:
+        values = _exercise_irt_numeric(
+            {
+                "difficulty_norm": 0.6,
+                "discrimination_norm": 0.1,
+                "correct_rate": 0.5,
+                "interaction_count": 20,
+            }
+        )
+
+        self.assertEqual(values[0], 0.6)
+        self.assertEqual(values[1], 0.1)
 
 
 if __name__ == "__main__":

@@ -186,7 +186,7 @@ class SemanticConvERelationEncodingTest(unittest.TestCase):
             "no_concept_semantic should keep exercise semantic text active",
         )
 
-    def test_no_exercise_semantic_only_masks_exercise_text(self) -> None:
+    def test_no_exercise_semantic_masks_exercise_text_and_keeps_concepts_id_only(self) -> None:
         model_a = self.build_model(
             entity_type_ids=torch.tensor(
                 [
@@ -231,13 +231,62 @@ class SemanticConvERelationEncodingTest(unittest.TestCase):
         embeddings_a = model_a.entity_embedding(torch.tensor([1, 2], dtype=torch.long))
         embeddings_b = model_b.entity_embedding(torch.tensor([1, 2], dtype=torch.long))
 
-        self.assertFalse(
+        self.assertTrue(
             torch.allclose(embeddings_a[0], embeddings_b[0], atol=1e-6),
-            "no_exercise_semantic should keep concept semantic text active",
+            "concept entities are ID-only by default in this branch",
         )
         self.assertTrue(
             torch.allclose(embeddings_a[1], embeddings_b[1], atol=1e-6),
             "no_exercise_semantic should remove text contribution for exercise entities only",
+        )
+
+    def test_concept_extra_reenables_concept_side_features(self) -> None:
+        model_a = self.build_model(
+            entity_type_ids=torch.tensor(
+                [
+                    ENTITY_TYPE_TO_ID["kc"],
+                    ENTITY_TYPE_TO_ID["ex"],
+                    ENTITY_TYPE_TO_ID["uid"],
+                ],
+                dtype=torch.long,
+            )
+        )
+        torch.manual_seed(2024)
+        model_b = self.build_model(
+            entity_type_ids=torch.tensor(
+                [
+                    ENTITY_TYPE_TO_ID["kc"],
+                    ENTITY_TYPE_TO_ID["ex"],
+                    ENTITY_TYPE_TO_ID["uid"],
+                ],
+                dtype=torch.long,
+            )
+        )
+        model_a.ablation_mode = "concept_extra"
+        model_b.ablation_mode = "concept_extra"
+        with torch.no_grad():
+            for model in [model_a, model_b]:
+                model.emb_e.weight.zero_()
+                model.entity_type_emb.weight.zero_()
+                model.cluster_emb.weight.zero_()
+                for layer in model.numeric_projector:
+                    if hasattr(layer, "weight"):
+                        layer.weight.zero_()
+                    if hasattr(layer, "bias") and layer.bias is not None:
+                        layer.bias.zero_()
+                model.text_projector.weight.zero_()
+                model.text_projector.weight[0, 0] = 1.0
+                model.raw_semantic_gate.fill_(10.0)
+            model_a.text_features.zero_()
+            model_b.text_features.zero_()
+            model_b.text_features[0, 0] = 1.0
+
+        embeddings_a = model_a.entity_embedding(torch.tensor([0], dtype=torch.long))
+        embeddings_b = model_b.entity_embedding(torch.tensor([0], dtype=torch.long))
+
+        self.assertFalse(
+            torch.allclose(embeddings_a, embeddings_b, atol=1e-6),
+            "concept_extra should restore concept semantic side features for comparison runs",
         )
 
     def test_gate_values_are_type_level_and_start_near_five_percent(self) -> None:

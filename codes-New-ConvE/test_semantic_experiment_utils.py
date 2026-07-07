@@ -44,7 +44,7 @@ class SemanticExperimentUtilsTest(unittest.TestCase):
 
     def test_model_version_marks_continuous_relation_encoding(self) -> None:
         self.assertIn("v5", MODEL_VERSION)
-        self.assertIn("id_anchored", MODEL_VERSION)
+        self.assertIn("stat_no_kc", MODEL_VERSION)
 
     def test_ablation_model_dir_keeps_full_backward_compatible(self) -> None:
         self.assertEqual(ablation_model_dir("full"), "SemanticConvE")
@@ -59,6 +59,7 @@ class SemanticExperimentUtilsTest(unittest.TestCase):
             ablations,
             [
                 "full",
+                "concept_extra",
                 "no_content_entity",
                 "no_relation_aware",
                 "no_type_aware_scoring",
