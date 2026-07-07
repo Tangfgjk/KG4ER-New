@@ -27,7 +27,7 @@ class SemanticConvEInferenceHelperTest(unittest.TestCase):
                 encoding="utf-8",
             )
 
-            users = inference.test_users_from_triples(data_dir)
+            users = inference.load_test_users_from_triples(data_dir)
 
         self.assertEqual(users, ["uid1", "uid3"])
 

@@ -12,20 +12,26 @@ from pathlib import Path
 from typing import Any, Iterable, List, Sequence
 
 
-MODEL_VERSION = "semantic_conve_v5_stat_no_kc_extra"
+MODEL_VERSION = "semantic_conve_v7_attention_fusion"
 
 VALID_ABLATIONS = [
     "full",
+    "id_only",
+    "direct_sum_fusion",
+    "no_concept_text",
+    "no_exercise_text",
+    "no_text_semantic",
+    "no_pedagogical",
+    "no_relation_aware",
+    "no_type_aware_scoring",
     "no_mastery",
     "no_forgetting",
     "no_seq",
+    # Backward-compatible aliases.
     "no_content_entity",
-    "no_relation_aware",
-    "no_type_aware_scoring",
     "no_semantic",
     "no_concept_semantic",
     "no_exercise_semantic",
-    "no_pedagogical",
     "no_exercise_irt",
     "no_learner_irt",
     "no_cluster",
@@ -33,15 +39,19 @@ VALID_ABLATIONS = [
     "discrete_relation",
     "hybrid_relation",
     "concept_extra",
-    "id_only",
+    "concept_name_only",
 ]
 
 GRAPH_ABLATIONS = ["no_mastery", "no_forgetting", "no_seq"]
 
 DEFAULT_ALL_ABLATIONS = [
     "full",
-    "concept_extra",
-    "no_content_entity",
+    "id_only",
+    "direct_sum_fusion",
+    "no_text_semantic",
+    "no_concept_text",
+    "no_exercise_text",
+    "no_pedagogical",
     "no_relation_aware",
     "no_type_aware_scoring",
     "no_mastery",
