@@ -12,48 +12,43 @@ from pathlib import Path
 from typing import Any, Iterable, List, Sequence
 
 
-MODEL_VERSION = "semantic_conve_v7_attention_fusion"
+MODEL_VERSION = "semantic_conve_v8_noq_mirt_features"
 
 VALID_ABLATIONS = [
     "full",
-    "id_only",
-    "direct_sum_fusion",
-    "no_concept_text",
-    "no_exercise_text",
-    "no_text_semantic",
-    "no_pedagogical",
-    "no_relation_aware",
-    "no_type_aware_scoring",
+    "full_state_hybrid",
+    "irt_only_ped",
+    "stat_only_ped",
+    "no_irt",
+    "no_stat_ped",
     "no_mastery",
     "no_forgetting",
     "no_seq",
-    # Backward-compatible aliases.
+    "id_head_reference",
     "no_content_entity",
+    "no_relation_aware",
+    "no_type_aware_scoring",
     "no_semantic",
     "no_concept_semantic",
     "no_exercise_semantic",
+    "no_pedagogical",
     "no_exercise_irt",
     "no_learner_irt",
     "no_cluster",
     "no_relation_strength",
     "discrete_relation",
     "hybrid_relation",
-    "concept_extra",
-    "concept_name_only",
+    "id_only",
 ]
 
 GRAPH_ABLATIONS = ["no_mastery", "no_forgetting", "no_seq"]
 
 DEFAULT_ALL_ABLATIONS = [
-    "full",
-    "id_only",
-    "direct_sum_fusion",
-    "no_text_semantic",
-    "no_concept_text",
-    "no_exercise_text",
-    "no_pedagogical",
-    "no_relation_aware",
-    "no_type_aware_scoring",
+    "full_state_hybrid",
+    "irt_only_ped",
+    "stat_only_ped",
+    "no_irt",
+    "no_stat_ped",
     "no_mastery",
     "no_forgetting",
     "no_seq",
@@ -111,8 +106,13 @@ def old_codes_root() -> Path:
     return er_root() / "KG4ER" / "codes"
 
 
-def graph_path_for_dataset(dataset: str, data_root: Path | None = None) -> Path:
+def graph_path_for_dataset(dataset: str, data_root: Path | None = None, graph_subdir: str | None = None) -> Path:
     root = (data_root or default_data_root()) / dataset
+    if graph_subdir:
+        target = root / graph_subdir
+        if (target / "entities.dict").exists():
+            return target
+        raise FileNotFoundError(f"Cannot locate graph files for dataset {dataset} in subdir {graph_subdir}: {target}")
     prepared = root / "prepared_for_kt"
     if (prepared / "entities.dict").exists():
         return prepared
@@ -149,7 +149,7 @@ def parse_top_ks(value: str | Sequence[int]) -> List[int]:
 
 
 def ablation_model_dir(ablation: str) -> str:
-    if ablation == "full":
+    if ablation in {"full", "full_state_hybrid"}:
         return "SemanticConvE"
     return f"SemanticConvE_{ablation}"
 

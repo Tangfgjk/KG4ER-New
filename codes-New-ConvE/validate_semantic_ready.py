@@ -34,7 +34,6 @@ REQUIRED_FEATURE_FILES = [
     "entity_features/exercise_semantics.json",
     "entity_features/learner_pedagogy.json",
     "irt_features/exercise_irt_features.json",
-    "stat_features/exercise_stat_features.json",
     "text_embeddings/concept_text_embeddings.npy",
     "text_embeddings/exercise_text_embeddings.npy",
     "text_embeddings/text_embedding_manifest.json",
@@ -51,8 +50,8 @@ def count_q_rows(path: Path) -> int:
         return sum(1 for line in fp if line.strip())
 
 
-def validate_dataset(dataset: str, data_root: Path, allow_template: bool = False) -> Dict[str, Any]:
-    graph_path = graph_path_for_dataset(dataset, data_root)
+def validate_dataset(dataset: str, data_root: Path, allow_template: bool = False, graph_subdir: str | None = None) -> Dict[str, Any]:
+    graph_path = graph_path_for_dataset(dataset, data_root, graph_subdir=graph_subdir)
     feature_dir = graph_path / "semantic_kg_features"
     errors: List[str] = []
     warnings: List[str] = []
@@ -95,10 +94,6 @@ def validate_dataset(dataset: str, data_root: Path, allow_template: bool = False
     if (feature_dir / "entity_features" / "learner_pedagogy.json").exists():
         learner_count = len(read_json(feature_dir / "entity_features" / "learner_pedagogy.json").get("learners", {}))
 
-    stat_exercise_count = 0
-    if (feature_dir / "stat_features" / "exercise_stat_features.json").exists():
-        stat_exercise_count = len(read_json(feature_dir / "stat_features" / "exercise_stat_features.json").get("exercises", {}))
-
     concept_embedding_shape = None
     exercise_embedding_shape = None
     manifest_dim = None
@@ -125,8 +120,6 @@ def validate_dataset(dataset: str, data_root: Path, allow_template: bool = False
 
     if q_count and exercise_count and q_count != exercise_count:
         errors.append(f"Q rows {q_count} != exercise semantics count {exercise_count}")
-    if q_count and stat_exercise_count and q_count != stat_exercise_count:
-        errors.append(f"Q rows {q_count} != statistical exercise feature count {stat_exercise_count}")
 
     expected_feature_dir = graph_path / "semantic_kg_features"
     if feature_dir != expected_feature_dir:
@@ -141,7 +134,6 @@ def validate_dataset(dataset: str, data_root: Path, allow_template: bool = False
         "q_exercise_count": q_count,
         "concept_count": concept_count,
         "exercise_count": exercise_count,
-        "stat_exercise_count": stat_exercise_count,
         "learner_count": learner_count,
         "definition_source_summary": definition_summary,
         "template_definition_count": template_count,
@@ -159,6 +151,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--data-root", type=Path, default=default_data_root())
     parser.add_argument("--datasets", default=",".join(DEFAULT_DATASETS))
     parser.add_argument("--allow-template", action="store_true")
+    parser.add_argument("--graph-subdir", default=None)
     parser.add_argument("--output-file", type=Path, default=None)
     return parser.parse_args()
 
@@ -166,7 +159,7 @@ def parse_args() -> argparse.Namespace:
 def main() -> None:
     args = parse_args()
     reports = [
-        validate_dataset(dataset, args.data_root, allow_template=args.allow_template)
+        validate_dataset(dataset, args.data_root, allow_template=args.allow_template, graph_subdir=args.graph_subdir)
         for dataset in parse_csv_list(args.datasets)
     ]
     summary = {

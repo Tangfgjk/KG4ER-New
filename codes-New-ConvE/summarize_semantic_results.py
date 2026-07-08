@@ -246,7 +246,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--run-id", required=True)
     parser.add_argument("--runs-root", type=Path, default=default_runs_root())
     parser.add_argument("--seeds", default="2024,2025,2026,2027,2028")
-    parser.add_argument("--ablations", default="full")
+    parser.add_argument("--ablations", default="all")
     parser.add_argument("--top-ks", default=",".join(str(k) for k in DEFAULT_TOP_KS))
     parser.add_argument("--output-dir", type=Path, default=None)
     return parser.parse_args()
@@ -261,7 +261,7 @@ def main() -> None:
         raise ValueError(f"Unknown ablations: {','.join(invalid_ablations)}")
     top_ks = parse_top_ks(args.top_ks)
     run_dir = args.runs_root / args.dataset / args.run_id
-    output_dir = args.output_dir or (run_dir / "summary")
+    output_dir = args.output_dir or (run_dir / "summaries")
     rows = []
     missing: Dict[str, List[int]] = {}
     for ablation in ablations:

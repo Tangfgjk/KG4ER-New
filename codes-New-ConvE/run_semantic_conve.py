@@ -226,7 +226,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--ablation", choices=sorted(VALID_MODEL_ABLATIONS), default="full")
     parser.add_argument("--deterministic", action="store_true")
     parser.add_argument("--resume", action="store_true")
-    parser.add_argument("--include-test-triples", "--include_test_triples", dest="include_test_triples", action="store_true", default=True)
+    parser.add_argument("--include-test-triples", "--include_test_triples", dest="include_test_triples", action="store_true", default=False)
     parser.add_argument("--exclude-test-triples", "--exclude_test_triples", dest="include_test_triples", action="store_false")
     parser.add_argument("--use-bias", "--use_bias", dest="use_bias", action="store_true", default=True)
     return parser.parse_args()
@@ -338,9 +338,40 @@ def main() -> None:
             "seed": args.seed,
             "ablation": args.ablation,
             "checkpoint": "best.pt" if best_path.exists() else "last.pt",
-            "entity_fusion": "feature-token attention + FC + ID residual",
+            "entity_fusion": "type-aware gated semantic-pedagogical fusion",
             "semantic_quality": "enabled",
+            "state_encoder": "learner entities use StateEncoder(state(uid)); uid ID embedding is not used for learner representation unless ablation=id_head_reference",
             "gate_values": model.gate_values(),
+        },
+    )
+    write_json(
+        args.save_path / "state_encoder_config.json",
+        {
+            "model": "SemanticConvE",
+            "model_version": MODEL_VERSION,
+            "dataset": args.dataset_name,
+            "seed": args.seed,
+            "ablation": args.ablation,
+            "enabled": args.ablation not in {"id_only", "id_head_reference"},
+            "state_feature_slices": bundle.state_feature_slices,
+            "state_feature_dim": int(bundle.state_features.shape[1]),
+            "learner_representation": (
+                "all learner positions use StateEncoder(state(uid)); test_triples are not used for training by default"
+            ),
+            "include_test_triples": args.include_test_triples,
+        },
+    )
+    write_json(
+        args.save_path / "relation_encoder_config.json",
+        {
+            "model": "SemanticConvE",
+            "model_version": MODEL_VERSION,
+            "dataset": args.dataset_name,
+            "seed": args.seed,
+            "ablation": args.ablation,
+            "full_relation_encoding": "relation type embedding + continuous strength projection; no relation ID embedding",
+            "relation_id_embedding_used": args.ablation in {"discrete_relation", "hybrid_relation", "id_only", "no_relation_aware", "relation_id_only"},
+            "relation_type_to_id": bundle.metadata.get("relation_type_to_id"),
         },
     )
     write_json(
@@ -364,8 +395,11 @@ def main() -> None:
             "feature_dir": bundle.metadata["feature_dir"],
             "text_embedding_model": bundle.metadata["text_manifest"].get("model"),
             "embedding_dim": args.embedding_dim,
-            "relation_encoding": "relation ID anchor + relation type token + projected continuous strength token",
-            "entity_fusion": "feature-token attention + FC + ID residual",
+            "relation_encoding": "continuous: relation type embedding + projected relation strength; no independent relation-id embedding",
+            "entity_fusion": "type-aware gated semantic-pedagogical fusion; learner entities use state-aware encoder",
+            "state_feature_dim": int(bundle.state_features.shape[1]),
+            "state_feature_slices": bundle.state_feature_slices,
+            "numeric_feature_slices": bundle.numeric_feature_slices,
             "semantic_quality": bundle.metadata.get("semantic_quality"),
         },
     )

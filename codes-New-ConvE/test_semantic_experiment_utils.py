@@ -42,9 +42,20 @@ class SemanticExperimentUtilsTest(unittest.TestCase):
             self.assertEqual(graph_path.name, "Eedi")
             self.assertTrue((graph_path / "entities.dict").exists())
 
-    def test_model_version_marks_continuous_relation_encoding(self) -> None:
-        self.assertIn("v7", MODEL_VERSION)
-        self.assertIn("attention", MODEL_VERSION)
+    def test_graph_path_can_target_v8_subdir(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            data_root = Path(tmp)
+            er_v8 = data_root / "Eedi" / "er_v8"
+            er_v8.mkdir(parents=True)
+            (er_v8 / "entities.dict").write_text("0\tuid0\n", encoding="utf-8")
+
+            graph_path = graph_path_for_dataset("Eedi", data_root, graph_subdir="er_v8")
+
+            self.assertEqual(graph_path, er_v8)
+
+    def test_model_version_marks_v8_noq_mirt_features(self) -> None:
+        self.assertIn("v8", MODEL_VERSION)
+        self.assertIn("noq_mirt", MODEL_VERSION)
 
     def test_ablation_model_dir_keeps_full_backward_compatible(self) -> None:
         self.assertEqual(ablation_model_dir("full"), "SemanticConvE")
@@ -58,15 +69,11 @@ class SemanticExperimentUtilsTest(unittest.TestCase):
         self.assertEqual(
             ablations,
             [
-                "full",
-                "id_only",
-                "direct_sum_fusion",
-                "no_text_semantic",
-                "no_concept_text",
-                "no_exercise_text",
-                "no_pedagogical",
-                "no_relation_aware",
-                "no_type_aware_scoring",
+                "full_state_hybrid",
+                "irt_only_ped",
+                "stat_only_ped",
+                "no_irt",
+                "no_stat_ped",
                 "no_mastery",
                 "no_forgetting",
                 "no_seq",

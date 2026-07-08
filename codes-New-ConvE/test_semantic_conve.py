@@ -33,7 +33,7 @@ def read_q_count(data_path: Path) -> int:
         return sum(1 for line in fp if line.strip())
 
 
-def load_test_users_from_triples(data_path: Path) -> List[str]:
+def users_from_triples(data_path: Path) -> List[str]:
     users = set()
     with (data_path / "test_triples.txt").open("r", encoding="utf-8") as fp:
         for line in fp:
@@ -43,6 +43,10 @@ def load_test_users_from_triples(data_path: Path) -> List[str]:
             ):
                 users.add(tail)
     return sorted(users, key=lambda uid: int(uid[3:]) if uid.startswith("uid") and uid[3:].isdigit() else uid)
+
+
+test_users_from_triples = users_from_triples
+test_users_from_triples.__test__ = False
 
 
 def exercise_index(entity_name: str) -> int | None:
@@ -196,7 +200,7 @@ def main() -> None:
     exercise_tail_ids = torch.tensor(exercise_ids, dtype=torch.long, device=device)
     rec_id = bundle.relation2id["rec"]
     rec_relation = torch.tensor([rec_id], dtype=torch.long, device=device)
-    users = load_test_users_from_triples(args.data_path)
+    users = users_from_triples(args.data_path)
     type_aware_scoring = args.ablation != "no_type_aware_scoring"
     use_forgetting_score = args.forgetting_score_weight > 0 and args.ablation != "no_forgetting"
     exfr_ids = None

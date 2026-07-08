@@ -91,21 +91,21 @@ def command_train(
     ]
     if args.deterministic:
         command.append("--deterministic")
-    if args.exclude_test_triples:
-        command.append("--exclude-test-triples")
-    else:
+    if args.include_test_triples:
         command.append("--include-test-triples")
+    else:
+        command.append("--exclude-test-triples")
     if resume_train:
         command.append("--resume")
     return command
 
 
-def command_test(args: argparse.Namespace, graph_path: Path, seed_dir: Path, ablation: str) -> List[str]:
+def command_test(args: argparse.Namespace, eval_graph_path: Path, seed_dir: Path, ablation: str) -> List[str]:
     return [
         sys.executable,
         str(code_dir() / "test_semantic_conve.py"),
         "--data-path",
-        str(graph_path),
+        str(eval_graph_path),
         "--dataset-name",
         args.dataset,
         "--save-path",
@@ -121,13 +121,13 @@ def command_test(args: argparse.Namespace, graph_path: Path, seed_dir: Path, abl
     ]
 
 
-def command_eval(args: argparse.Namespace, graph_path: Path, seed_dir: Path, seed: int, ablation: str) -> List[str]:
+def command_eval(args: argparse.Namespace, eval_graph_path: Path, seed_dir: Path, seed: int, ablation: str) -> List[str]:
     scores_file = seed_dir / "SemanticConvE_uid_ex_scores.pkl"
     return [
         sys.executable,
         str(old_codes_root() / "evaluate_recommendations.py"),
         "--data-dir",
-        str(graph_path),
+        str(eval_graph_path),
         "--scores-file",
         str(scores_file),
         "--output-dir",
@@ -187,7 +187,14 @@ def graph_path_for_ablation(args: argparse.Namespace, base_graph_path: Path, run
     return target
 
 
-def run_seed(args: argparse.Namespace, run_dir: Path, graph_path: Path, seed: int, ablation: str) -> Dict[str, Any]:
+def run_seed(
+    args: argparse.Namespace,
+    run_dir: Path,
+    train_graph_path: Path,
+    eval_graph_path: Path,
+    seed: int,
+    ablation: str,
+) -> Dict[str, Any]:
     seed_dir = seed_dir_for(run_dir, ablation, seed)
     seed_dir.mkdir(parents=True, exist_ok=True)
     commands: List[Dict[str, Any]] = []
@@ -196,7 +203,7 @@ def run_seed(args: argparse.Namespace, run_dir: Path, graph_path: Path, seed: in
         return {"seed": seed, "ablation": ablation, "status": "skipped_completed", "seed_dir": seed_dir}
 
     resume_train = bool(args.resume and (seed_dir / "last.pt").exists())
-    train_command = command_train(args, graph_path, seed_dir, seed, resume_train, ablation)
+    train_command = command_train(args, train_graph_path, seed_dir, seed, resume_train, ablation)
     commands.append({"stage": "train", "ablation": ablation, "seed": seed, "command": train_command})
     train_outputs_ready = (seed_dir / "best.pt").exists() and (seed_dir / "last.pt").exists() and (seed_dir / "metrics.json").exists()
     if not stage_done(seed_dir / "train_stage.json") or not train_outputs_ready:
@@ -209,7 +216,7 @@ def run_seed(args: argparse.Namespace, run_dir: Path, graph_path: Path, seed: in
             dry_run=args.dry_run,
         )
 
-    test_command = command_test(args, graph_path, seed_dir, ablation)
+    test_command = command_test(args, eval_graph_path, seed_dir, ablation)
     commands.append({"stage": "test", "ablation": ablation, "seed": seed, "command": test_command})
     test_outputs_ready = (seed_dir / "SemanticConvE_uid_ex_scores.pkl").exists() and (seed_dir / "semantic_conve_inference.json").exists()
     if not stage_done(seed_dir / "test_stage.json") or not test_outputs_ready:
@@ -222,7 +229,7 @@ def run_seed(args: argparse.Namespace, run_dir: Path, graph_path: Path, seed: in
             dry_run=args.dry_run,
         )
 
-    eval_command = command_eval(args, graph_path, seed_dir, seed, ablation)
+    eval_command = command_eval(args, eval_graph_path, seed_dir, seed, ablation)
     commands.append({"stage": "eval", "ablation": ablation, "seed": seed, "command": eval_command})
     eval_outputs_ready = (seed_dir / "eval" / "metrics.json").exists() and (seed_dir / "eval" / "metrics.csv").exists()
     if not stage_done(seed_dir / "eval_stage.json") or not eval_outputs_ready:
@@ -243,7 +250,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--dataset", required=True)
     parser.add_argument("--run-id", default=None)
     parser.add_argument("--seeds", default="2024")
-    parser.add_argument("--ablations", default="full", help="Comma-separated ablations. Default runs the revised full model.")
+    parser.add_argument("--ablations", default="all", help="Comma-separated ablations or all. Default runs the V6 first-round suite.")
     parser.add_argument("--epochs", type=int, default=25)
     parser.add_argument("--bs", type=int, default=1024)
     parser.add_argument("--learning-rate", type=float, default=0.001)
@@ -253,6 +260,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--resume", action="store_true")
     parser.add_argument("--dry-run", action="store_true")
     parser.add_argument("--data-root", type=Path, default=default_data_root())
+    parser.add_argument("--graph-subdir", default=None, help="Optional dataset subdirectory containing graph files, e.g. er_v8.")
     parser.add_argument("--runs-root", type=Path, default=default_runs_root())
     parser.add_argument("--ablation-data-root", type=Path, default=default_ablation_data_root())
     parser.add_argument("--top-k-rec", type=int, default=10)
@@ -263,7 +271,8 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--top-ks", default=",".join(str(k) for k in DEFAULT_TOP_KS))
     parser.add_argument("--ep-top-k", type=int, default=10)
     parser.add_argument("--skip-validation", action="store_true")
-    parser.add_argument("--exclude-test-triples", action="store_true")
+    parser.add_argument("--include-test-triples", dest="include_test_triples", action="store_true", default=False)
+    parser.add_argument("--exclude-test-triples", dest="include_test_triples", action="store_false")
     return parser.parse_args()
 
 
@@ -280,12 +289,12 @@ def main() -> None:
     if args.forgetting_exercise_batch_size <= 0:
         raise ValueError("--forgetting-exercise-batch-size must be positive")
     run_dir = run_dir_for(args)
-    base_graph_path = graph_path_for_dataset(args.dataset, args.data_root)
+    base_graph_path = graph_path_for_dataset(args.dataset, args.data_root, graph_subdir=args.graph_subdir)
     run_dir.mkdir(parents=True, exist_ok=True)
 
     validation = None
     if not args.skip_validation:
-        validation = validate_dataset(args.dataset, args.data_root)
+        validation = validate_dataset(args.dataset, args.data_root, graph_subdir=args.graph_subdir)
         write_json(run_dir / "semantic_ready_validation.json", validation)
         if validation["status"] != "passed":
             raise RuntimeError(f"Dataset validation failed: {validation['errors']}")
@@ -297,6 +306,7 @@ def main() -> None:
             "run_id": run_dir.name,
             "run_dir": run_dir,
             "base_graph_path": base_graph_path,
+            "graph_subdir": args.graph_subdir,
             "ablations": args.ablations,
             "seeds": args.seeds,
             "epochs": args.epochs,
@@ -314,7 +324,8 @@ def main() -> None:
             "delta_2": args.delta_2,
             "forgetting_score_weight": args.forgetting_score_weight,
             "forgetting_exercise_batch_size": args.forgetting_exercise_batch_size,
-            "include_test_triples": not args.exclude_test_triples,
+            "include_test_triples": args.include_test_triples,
+            "train_eval_split": "train uses train graph only; test_triples are evaluation-only unless --include-test-triples is set",
             "model_version": MODEL_VERSION,
             "env": python_env_info(),
             "validation": validation,
@@ -327,7 +338,7 @@ def main() -> None:
         ablation_graph_path = graph_path_for_ablation(args, base_graph_path, run_dir, ablation)
         for seed in args.seeds:
             try:
-                result = run_seed(args, run_dir, ablation_graph_path, seed, ablation)
+                result = run_seed(args, run_dir, ablation_graph_path, base_graph_path, seed, ablation)
                 statuses.append(result)
                 all_commands.extend(result.get("commands", []))
                 write_json(run_dir / "run_status.json", {"status": "running", "runs": statuses})
