@@ -111,13 +111,13 @@ def graph_path_for_dataset(dataset: str, data_root: Path | None = None, graph_su
     if graph_subdir:
         target = root / graph_subdir
         if (target / "entities.dict").exists():
-            return target
+            return target.resolve()
         raise FileNotFoundError(f"Cannot locate graph files for dataset {dataset} in subdir {graph_subdir}: {target}")
     prepared = root / "prepared_for_kt"
     if (prepared / "entities.dict").exists():
-        return prepared
+        return prepared.resolve()
     if (root / "entities.dict").exists():
-        return root
+        return root.resolve()
     raise FileNotFoundError(f"Cannot locate graph files for dataset {dataset}: {root}")
 
 

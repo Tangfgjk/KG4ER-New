@@ -51,7 +51,26 @@ class SemanticExperimentUtilsTest(unittest.TestCase):
 
             graph_path = graph_path_for_dataset("Eedi", data_root, graph_subdir="er_v8")
 
-            self.assertEqual(graph_path, er_v8)
+            self.assertEqual(graph_path, er_v8.resolve())
+
+    def test_graph_path_resolves_relative_data_root(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            cwd = Path.cwd()
+            try:
+                temp_root = Path(tmp)
+                (temp_root / "data" / "Eedi" / "er_v8").mkdir(parents=True)
+                (temp_root / "data" / "Eedi" / "er_v8" / "entities.dict").write_text("0\tuid0\n", encoding="utf-8")
+                import os
+
+                os.chdir(temp_root)
+                graph_path = graph_path_for_dataset("Eedi", Path("data"), graph_subdir="er_v8")
+
+                self.assertTrue(graph_path.is_absolute())
+                self.assertEqual(graph_path, (temp_root / "data" / "Eedi" / "er_v8").resolve())
+            finally:
+                import os
+
+                os.chdir(cwd)
 
     def test_model_version_marks_v8_noq_mirt_features(self) -> None:
         self.assertIn("v8", MODEL_VERSION)
