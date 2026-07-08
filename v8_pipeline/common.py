@@ -4,6 +4,7 @@ import json
 import math
 import re
 import shutil
+import csv
 from pathlib import Path
 from typing import Any, Iterable
 
@@ -131,6 +132,105 @@ def count_entities_by_prefix(entity_dict: dict[str, int], prefix: str) -> int:
     return sum(1 for name in entity_dict if name.startswith(prefix))
 
 
+def graph_learner_count(graph_dir: Path) -> int:
+    return count_entities_by_prefix(read_entity_dict(graph_dir / "entities.dict"), "uid")
+
+
+def _identifier_candidates(value: Any) -> list[str]:
+    if value is None:
+        return []
+    text = str(value).strip()
+    if not text or text.lower() == "nan":
+        return []
+    candidates = [text]
+    try:
+        number = float(text)
+        if number.is_integer():
+            candidates.append(str(int(number)))
+    except ValueError:
+        pass
+    return list(dict.fromkeys(candidates))
+
+
+def _raw_to_fit_uid(input_dir: Path) -> dict[str, int]:
+    manifest_path = input_dir / "mirt_input_manifest.json"
+    if not manifest_path.exists():
+        raise FileNotFoundError(f"MIRT input manifest not found: {manifest_path}")
+    manifest = read_json(manifest_path)
+    reverse = manifest.get("maps", {}).get("user_id_to_raw", {})
+    return {str(raw): int(fit_uid) for fit_uid, raw in reverse.items()}
+
+
+def _find_fit_uid(raw_to_fit: dict[str, int], candidates: Iterable[Any]) -> int | None:
+    for candidate in candidates:
+        for key in _identifier_candidates(candidate):
+            if key in raw_to_fit:
+                return int(raw_to_fit[key])
+    return None
+
+
+def graph_learner_fit_indices(dataset: str, dataset_dir: Path, graph_dir: Path, input_dir: Path) -> tuple[list[int], dict[str, Any]]:
+    """Map ER graph learners uid0..uidN to fitted MIRT user indices.
+
+    MIRT is estimated on `sequence_interactions.csv`, which may include training
+    learners as well as test learners. ER recommendation files, however, only
+    use the learners present in the graph directory. This function keeps the
+    exported V8 mastery/features aligned with `entities.dict`.
+    """
+
+    learner_count = graph_learner_count(graph_dir)
+    raw_to_fit = _raw_to_fit_uid(input_dir)
+    fit_indices: list[int] = []
+    missing: list[dict[str, Any]] = []
+    source = "graph_uid_sequence"
+
+    test_sequences = graph_dir / "test_sequences.csv"
+    if test_sequences.exists():
+        source = "test_sequences.csv"
+        with test_sequences.open("r", encoding="utf-8", newline="") as fp:
+            rows = list(csv.DictReader(fp))
+        if len(rows) < learner_count:
+            missing.append({"reason": "test_sequences_shorter_than_entities", "rows": len(rows), "learner_count": learner_count})
+        for idx in range(learner_count):
+            row = rows[idx] if idx < len(rows) else {}
+            candidates: list[Any] = []
+            for key in ["uid", "user_id", "original_uid", "raw_uid"]:
+                if key in row:
+                    candidates.append(row.get(key))
+            if "uid" in row:
+                candidates.extend([f"test_{row.get('uid')}", f"uid{row.get('uid')}"])
+            fit_uid = _find_fit_uid(raw_to_fit, candidates)
+            if fit_uid is None:
+                missing.append({"entity_id": f"uid{idx}", "candidates": [str(x) for x in candidates if x is not None]})
+            else:
+                fit_indices.append(fit_uid)
+    else:
+        for idx in range(learner_count):
+            candidates = [str(idx), idx, f"uid{idx}", f"test_{idx}"]
+            fit_uid = _find_fit_uid(raw_to_fit, candidates)
+            if fit_uid is None:
+                missing.append({"entity_id": f"uid{idx}", "candidates": [str(x) for x in candidates]})
+            else:
+                fit_indices.append(fit_uid)
+
+    if missing or len(fit_indices) != learner_count:
+        raise ValueError(
+            "Cannot align ER graph learners to MIRT user ids. "
+            f"dataset={dataset}, source={source}, learner_count={learner_count}, "
+            f"matched={len(fit_indices)}, missing_examples={missing[:5]}"
+        )
+
+    return fit_indices, {
+        "dataset": dataset,
+        "source": source,
+        "learner_count": learner_count,
+        "mirt_user_count": len(raw_to_fit),
+        "matched_count": len(fit_indices),
+        "first_fit_indices": fit_indices[:10],
+        "notes": "Rows are ordered as uid0..uidN in entities.dict and selected from the full MIRT user parameter matrix.",
+    }
+
+
 def read_q_matrix(path: Path) -> np.ndarray:
     rows: list[list[int]] = []
     with path.open("r", encoding="utf-8") as fp:
@@ -188,4 +288,3 @@ def copy_dir(src: Path, dst: Path) -> None:
         shutil.rmtree(dst)
     dst.parent.mkdir(parents=True, exist_ok=True)
     shutil.copytree(src, dst)
-

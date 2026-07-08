@@ -7,7 +7,7 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 
-from common import default_data_root, locate_dataset_dir, locate_q_file, minmax, read_q_matrix, sigmoid, write_json
+from common import default_data_root, graph_learner_fit_indices, locate_dataset_dir, locate_graph_dir, locate_q_file, read_q_matrix, sigmoid, write_json
 
 
 def load_matrix(path: Path) -> np.ndarray:
@@ -79,6 +79,7 @@ def parse_args() -> argparse.Namespace:
 def main() -> None:
     args = parse_args()
     dataset_dir = locate_dataset_dir(args.dataset, args.data_root)
+    graph_dir = locate_graph_dir(dataset_dir)
     input_dir = args.input_dir or (dataset_dir / "mirt_v8" / "inputs")
     mirt_output_dir = args.mirt_output_dir or (dataset_dir / "mirt_v8" / "outputs")
     output_dir = args.output_dir or (dataset_dir / "kt_exports_v8")
@@ -89,7 +90,9 @@ def main() -> None:
     b_param = load_matrix(mirt_output_dir / f"b_param_{latent_dim}.csv")
     theta_param = load_matrix(mirt_output_dir / f"theta_param_{latent_dim}.csv")
     q_matrix = read_q_matrix(locate_q_file(dataset_dir))
-    mastery = build_mastery_proxy(theta_param, b_param, q_matrix, input_dir, history_weight=args.history_weight)
+    full_mastery = build_mastery_proxy(theta_param, b_param, q_matrix, input_dir, history_weight=args.history_weight)
+    fit_indices, alignment = graph_learner_fit_indices(args.dataset, dataset_dir, graph_dir, input_dir)
+    mastery = [full_mastery[fit_uid] for fit_uid in fit_indices]
     write_json(output_dir / "stu2know_mastery.json", mastery)
     write_json(
         output_dir / "mastery_export_manifest.json",
@@ -100,7 +103,9 @@ def main() -> None:
             "input_dir": input_dir,
             "output_file": output_dir / "stu2know_mastery.json",
             "student_count": len(mastery),
+            "mirt_student_count": len(full_mastery),
             "concept_count": len(mastery[0]) if mastery else 0,
+            "alignment": alignment,
             "history_weight": args.history_weight,
             "notes": "This proxy uses no-Q MIRT theta, item b-derived concept difficulty, and observed concept response history. Replace with EKTM_mirt checkpoint export when a compatible checkpoint is available.",
         },
@@ -110,4 +115,3 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
-

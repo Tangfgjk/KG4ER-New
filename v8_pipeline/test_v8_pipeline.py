@@ -8,6 +8,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 from prepare_mirt_inputs import build_mirt_frames, normalise_interactions
 from mirt_feature_export import build_exercise_features, build_learner_features, minmax
+from common import graph_learner_fit_indices, write_json
 
 
 def test_normalise_interactions_maps_raw_ids_to_dense_ids():
@@ -79,3 +80,35 @@ def test_build_learner_features_adds_cluster_and_mastery_proxy():
     assert all("cluster_id" in item for item in features.values())
     assert features["uid0"]["overall_mastery_kt_mean"] == 0.8
     assert 0.0 <= features["uid0"]["theta_norm"] <= 1.0
+
+
+def test_graph_learner_fit_indices_aligns_graph_subset(tmp_path):
+    dataset_dir = tmp_path / "toy"
+    input_dir = dataset_dir / "mirt_v8" / "inputs"
+    graph_dir = dataset_dir / "prepared_for_kt"
+    input_dir.mkdir(parents=True)
+    graph_dir.mkdir(parents=True)
+    (graph_dir / "entities.dict").write_text(
+        "0\tuid0\n1\tuid1\n2\tuid2\n3\tex0\n4\tkc0\n",
+        encoding="utf-8",
+    )
+    write_json(
+        input_dir / "mirt_input_manifest.json",
+        {
+            "maps": {
+                "user_id_to_raw": {
+                    "0": "0",
+                    "1": "1",
+                    "2": "10",
+                    "3": "2",
+                    "4": "train_7",
+                }
+            }
+        },
+    )
+
+    fit_indices, info = graph_learner_fit_indices("toy", dataset_dir, graph_dir, input_dir)
+
+    assert fit_indices == [0, 1, 3]
+    assert info["learner_count"] == 3
+    assert info["mirt_user_count"] == 5

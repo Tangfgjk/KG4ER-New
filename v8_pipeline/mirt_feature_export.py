@@ -12,6 +12,7 @@ from sklearn.cluster import KMeans
 from common import (
     copy_dir,
     default_data_root,
+    graph_learner_fit_indices,
     locate_dataset_dir,
     locate_graph_dir,
     locate_semantic_feature_dir,
@@ -137,6 +138,22 @@ def sequence_stats(input_dir: Path) -> tuple[dict[int, int], dict[int, float], d
     return item_counts, item_correct, user_counts, user_correct
 
 
+def align_mastery_for_graph_learners(mastery: list[list[float]], fit_indices: list[int], full_user_count: int) -> list[list[float]]:
+    if not mastery:
+        return []
+    mastery_arr = np.asarray(mastery, dtype=np.float64)
+    if mastery_arr.ndim == 1:
+        mastery_arr = mastery_arr.reshape(-1, 1)
+    if mastery_arr.shape[0] == len(fit_indices):
+        return mastery_arr.tolist()
+    if mastery_arr.shape[0] == full_user_count:
+        return mastery_arr[fit_indices].tolist()
+    raise ValueError(
+        "V8 mastery row count is neither graph learner count nor full MIRT user count: "
+        f"mastery_rows={mastery_arr.shape[0]}, graph_learners={len(fit_indices)}, mirt_users={full_user_count}"
+    )
+
+
 def ensure_text_feature_files(source_feature_dir: Path | None, output_feature_dir: Path, entity2id: dict[str, int]) -> None:
     entity_out = output_feature_dir / "entity_features"
     if source_feature_dir:
@@ -214,7 +231,18 @@ def main() -> None:
     mastery = read_json(mastery_file) if mastery_file.exists() else []
     item_counts, item_correct, user_counts, user_correct = sequence_stats(input_dir)
     exercise_features = build_exercise_features(a_param, b_param, item_counts, item_correct)
-    learner_features = build_learner_features(theta_param, mastery, user_correct, user_counts, n_clusters=args.n_clusters)
+    fit_indices, alignment = graph_learner_fit_indices(args.dataset, dataset_dir, graph_dir, input_dir)
+    aligned_theta = theta_param[fit_indices]
+    aligned_mastery = align_mastery_for_graph_learners(mastery, fit_indices, theta_param.shape[0])
+    aligned_user_counts = {idx: int(user_counts.get(fit_uid, 0)) for idx, fit_uid in enumerate(fit_indices)}
+    aligned_user_correct = {idx: float(user_correct.get(fit_uid, 0.0)) for idx, fit_uid in enumerate(fit_indices)}
+    learner_features = build_learner_features(
+        aligned_theta,
+        aligned_mastery,
+        aligned_user_correct,
+        aligned_user_counts,
+        n_clusters=args.n_clusters,
+    )
 
     entity2id = read_entity_dict(graph_dir / "entities.dict")
     source_feature_dir = locate_semantic_feature_dir(dataset_dir, graph_dir)
@@ -233,6 +261,8 @@ def main() -> None:
             "latent_dim": latent_dim,
             "exercise_count": len(exercise_features),
             "learner_count": len(learner_features),
+            "mirt_learner_count": int(theta_param.shape[0]),
+            "learner_alignment": alignment,
             "notes": "Difficulty/discrimination are exported from modified EduCDM no-Q MIRT, not custom 2PL.",
         },
     )
@@ -241,4 +271,3 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
-
