@@ -19,6 +19,22 @@ from common import (
 STATIC_GRAPH_FILES = ["entities.dict", "Q.txt", "stu2know_seq.json", "stu2know_forget.json", "stu2ex_forget.json"]
 
 
+def copy_optional_evaluation_files(dataset: str, dataset_dir: Path, source_graph_dir: Path, output_dir: Path) -> list[str]:
+    copied: list[str] = []
+    candidates = []
+    for root in [source_graph_dir, dataset_dir]:
+        candidates.extend(root.glob("*_uid_kc_response.txt"))
+        candidates.append(root / f"{dataset}_uid_kc_response.txt")
+    seen = set()
+    for src in candidates:
+        if src in seen or not src.exists() or not src.is_file():
+            continue
+        seen.add(src)
+        copy_file(src, output_dir / src.name)
+        copied.append(src.name)
+    return sorted(set(copied))
+
+
 def run(command: list[str], cwd: Path) -> None:
     print(" ".join(command))
     completed = subprocess.run(command, cwd=str(cwd))
@@ -57,6 +73,7 @@ def main() -> None:
         copy_file(source_graph_dir / file_name, output_dir / file_name)
     copy_file(kt_export_dir / "stu2know_mastery.json", output_dir / "stu2know_mastery.json")
     copy_dir(feature_dir, output_dir / "semantic_kg_features")
+    copied_eval_files = copy_optional_evaluation_files(args.dataset, dataset_dir, source_graph_dir, output_dir)
 
     data_scripts_dir = er_root() / "KG4ER" / "data"
     run(
@@ -119,6 +136,7 @@ def main() -> None:
             "delta_1": args.delta_1,
             "delta_2": args.delta_2,
             "relation_count": 304,
+            "copied_evaluation_files": copied_eval_files,
         },
     )
     print(f"created V8 ER graph: {output_dir}")
@@ -126,4 +144,3 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
-
