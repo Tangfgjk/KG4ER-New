@@ -12,6 +12,7 @@ from common import (
     er_root,
     locate_dataset_dir,
     locate_graph_dir,
+    locate_sequence_file,
     write_json,
 )
 
@@ -33,6 +34,15 @@ def copy_optional_evaluation_files(dataset: str, dataset_dir: Path, source_graph
         copy_file(src, output_dir / src.name)
         copied.append(src.name)
     return sorted(set(copied))
+
+
+def copy_optional_sequence_interactions(dataset_dir: Path, output_dir: Path) -> str | None:
+    try:
+        sequence_file = locate_sequence_file(dataset_dir)
+    except FileNotFoundError:
+        return None
+    copy_file(sequence_file, output_dir / "sequence_interactions.csv")
+    return str(sequence_file)
 
 
 def run(command: list[str], cwd: Path) -> None:
@@ -73,6 +83,7 @@ def main() -> None:
         copy_file(source_graph_dir / file_name, output_dir / file_name)
     copy_file(kt_export_dir / "stu2know_mastery.json", output_dir / "stu2know_mastery.json")
     copy_dir(feature_dir, output_dir / "semantic_kg_features")
+    source_sequence_file = copy_optional_sequence_interactions(dataset_dir, output_dir)
     copied_eval_files = copy_optional_evaluation_files(args.dataset, dataset_dir, source_graph_dir, output_dir)
 
     data_scripts_dir = er_root() / "KG4ER" / "data"
@@ -137,6 +148,7 @@ def main() -> None:
             "delta_2": args.delta_2,
             "relation_count": 304,
             "copied_evaluation_files": copied_eval_files,
+            "source_sequence_file": source_sequence_file,
         },
     )
     print(f"created V8 ER graph: {output_dir}")

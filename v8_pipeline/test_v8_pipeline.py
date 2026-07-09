@@ -148,6 +148,7 @@ def test_build_er_v8_passes_absolute_data_dir_to_legacy_scripts(tmp_path, monkey
     feature_dir.mkdir(parents=True)
     for file_name in build_er_v8.STATIC_GRAPH_FILES:
         (graph_dir / file_name).write_text("{}" if file_name.endswith(".json") else "0\tuid0\n", encoding="utf-8")
+    (graph_dir / "sequence_interactions.csv").write_text("uid,question,response\n0,0,1\n", encoding="utf-8")
     (kt_dir / "stu2know_mastery.json").write_text("{}", encoding="utf-8")
     (feature_dir / "marker.txt").write_text("features", encoding="utf-8")
     commands: list[list[str]] = []
@@ -164,3 +165,4 @@ def test_build_er_v8_passes_absolute_data_dir_to_legacy_scripts(tmp_path, monkey
     assert data_dir_args
     assert all(Path(value).is_absolute() for value in data_dir_args)
     assert all(Path(value).name == "er_v8" for value in data_dir_args)
+    assert (dataset_dir / "er_v8" / "sequence_interactions.csv").exists()

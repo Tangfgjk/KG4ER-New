@@ -2,6 +2,12 @@
 
 This branch contains the V9 SemanticConvE experiment code. Data files are not stored in GitHub.
 
+For TransE, TransE-adv, RotatE, DistMult, ComplEx, EB-CF, SB-CF, CBF, and KCP-ER, see:
+
+```text
+docs-for-git/COMPARISON_MODELS.md
+```
+
 Copy each prepared dataset into:
 
 ```text
@@ -76,4 +82,3 @@ python codes-New-ConvE\summarize_semantic_results.py `
   --ablations all `
   --runs-root runs
 ```
-
