@@ -14,6 +14,21 @@ import numpy as np
 DEFAULT_DATASETS = ["Eedi", "algebra2005", "assist2009-sub", "statics2011", "XES3G5M-sub-small"]
 
 
+def ensure_large_csv_field_limit(min_limit: int = 1024 * 1024 * 1024) -> None:
+    """Allow long sequence columns in prepared KT CSV files."""
+
+    current = csv.field_size_limit()
+    if current >= min_limit:
+        return
+    limit = min_limit
+    while True:
+        try:
+            csv.field_size_limit(limit)
+            return
+        except OverflowError:
+            limit = limit // 10
+
+
 def kg4er_new_root() -> Path:
     return Path(__file__).resolve().parents[1]
 
@@ -187,6 +202,7 @@ def graph_learner_fit_indices(dataset: str, dataset_dir: Path, graph_dir: Path, 
     test_sequences = graph_dir / "test_sequences.csv"
     if test_sequences.exists():
         source = "test_sequences.csv"
+        ensure_large_csv_field_limit()
         with test_sequences.open("r", encoding="utf-8", newline="") as fp:
             rows = list(csv.DictReader(fp))
         if len(rows) < learner_count:

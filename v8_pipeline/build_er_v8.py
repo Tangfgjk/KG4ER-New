@@ -60,11 +60,11 @@ def parse_args() -> argparse.Namespace:
 
 def main() -> None:
     args = parse_args()
-    dataset_dir = locate_dataset_dir(args.dataset, args.data_root)
-    source_graph_dir = locate_graph_dir(dataset_dir)
-    kt_export_dir = args.kt_export_dir or (dataset_dir / "kt_exports_v8")
-    feature_dir = args.feature_dir or (dataset_dir / "semantic_kg_features_v8")
-    output_dir = args.output_dir or (dataset_dir / "er_v8")
+    dataset_dir = locate_dataset_dir(args.dataset, args.data_root).resolve()
+    source_graph_dir = locate_graph_dir(dataset_dir).resolve()
+    kt_export_dir = (args.kt_export_dir or (dataset_dir / "kt_exports_v8")).resolve()
+    feature_dir = (args.feature_dir or (dataset_dir / "semantic_kg_features_v8")).resolve()
+    output_dir = (args.output_dir or (dataset_dir / "er_v8")).resolve()
     if output_dir.exists() and any(output_dir.iterdir()) and not args.force:
         raise FileExistsError(f"{output_dir} already exists. Use --force to overwrite V8 ER graph files.")
     output_dir.mkdir(parents=True, exist_ok=True)

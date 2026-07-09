@@ -1,4 +1,5 @@
 import sys
+import csv
 from pathlib import Path
 
 import numpy as np
@@ -9,6 +10,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 from prepare_mirt_inputs import build_mirt_frames, normalise_interactions
 from mirt_feature_export import build_exercise_features, build_learner_features, minmax
 from common import graph_learner_fit_indices, write_json
+import build_er_v8
 
 
 def test_normalise_interactions_maps_raw_ids_to_dense_ids():
@@ -112,3 +114,53 @@ def test_graph_learner_fit_indices_aligns_graph_subset(tmp_path):
     assert fit_indices == [0, 1, 3]
     assert info["learner_count"] == 3
     assert info["mirt_user_count"] == 5
+
+
+def test_graph_learner_fit_indices_accepts_long_sequence_fields(tmp_path):
+    csv.field_size_limit(131072)
+    dataset_dir = tmp_path / "toy"
+    input_dir = dataset_dir / "mirt_v8" / "inputs"
+    graph_dir = dataset_dir / "prepared_for_kt"
+    input_dir.mkdir(parents=True)
+    graph_dir.mkdir(parents=True)
+    (graph_dir / "entities.dict").write_text("0\tuid0\n1\tex0\n2\tkc0\n", encoding="utf-8")
+    write_json(input_dir / "mirt_input_manifest.json", {"maps": {"user_id_to_raw": {"0": "0"}}})
+    long_sequence = "1" * 200000
+    with (graph_dir / "test_sequences.csv").open("w", encoding="utf-8", newline="") as fp:
+        writer = csv.DictWriter(fp, fieldnames=["uid", "questions"])
+        writer.writeheader()
+        writer.writerow({"uid": "0", "questions": long_sequence})
+
+    fit_indices, info = graph_learner_fit_indices("toy", dataset_dir, graph_dir, input_dir)
+
+    assert fit_indices == [0]
+    assert info["source"] == "test_sequences.csv"
+
+
+def test_build_er_v8_passes_absolute_data_dir_to_legacy_scripts(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    dataset_dir = tmp_path / "data" / "toy"
+    graph_dir = dataset_dir / "prepared_for_kt"
+    kt_dir = dataset_dir / "kt_exports_v8"
+    feature_dir = dataset_dir / "semantic_kg_features_v8"
+    graph_dir.mkdir(parents=True)
+    kt_dir.mkdir(parents=True)
+    feature_dir.mkdir(parents=True)
+    for file_name in build_er_v8.STATIC_GRAPH_FILES:
+        (graph_dir / file_name).write_text("{}" if file_name.endswith(".json") else "0\tuid0\n", encoding="utf-8")
+    (kt_dir / "stu2know_mastery.json").write_text("{}", encoding="utf-8")
+    (feature_dir / "marker.txt").write_text("features", encoding="utf-8")
+    commands: list[list[str]] = []
+
+    def fake_run(command, cwd):
+        commands.append(command)
+
+    monkeypatch.setattr(build_er_v8, "run", fake_run)
+    monkeypatch.setattr(sys, "argv", ["build_er_v8.py", "--dataset", "toy", "--data-root", "data", "--force"])
+
+    build_er_v8.main()
+
+    data_dir_args = [command[command.index("--data-dir") + 1] for command in commands]
+    assert data_dir_args
+    assert all(Path(value).is_absolute() for value in data_dir_args)
+    assert all(Path(value).name == "er_v8" for value in data_dir_args)
