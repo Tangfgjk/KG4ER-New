@@ -8,6 +8,12 @@ For TransE, TransE-adv, RotatE, DistMult, ComplEx, EB-CF, SB-CF, CBF, and KCP-ER
 docs-for-git/COMPARISON_MODELS.md
 ```
 
+For the complete V9 workflow on a new computer, including data copy layout, SemanticConvE ablations, comparison models, resume commands, and one-click commands for all datasets, see:
+
+```text
+docs-for-git/V9_ALL_EXPERIMENT_COMMANDS.md
+```
+
 Copy each prepared dataset into:
 
 ```text
