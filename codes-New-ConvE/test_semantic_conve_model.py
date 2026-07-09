@@ -116,6 +116,14 @@ class SemanticConvERelationEncodingTest(unittest.TestCase):
             expected = model.relation_norm(model.relation_id_emb(relation_ids))
         self.assertTrue(torch.allclose(relation_embeddings, expected, atol=1e-6))
 
+    def test_v9_full_masks_statistical_pedagogical_features(self) -> None:
+        model = self.build_model()
+
+        self.assertIn("stat", model._numeric_groups_to_zero())
+        self.assertIn("learner_stat", model._state_groups_to_zero())
+        self.assertNotIn("irt", model._numeric_groups_to_zero())
+        self.assertNotIn("learner_irt", model._state_groups_to_zero())
+
     def test_no_semantic_ignores_text_features(self) -> None:
         torch.manual_seed(2024)
         model_a = self.build_model()

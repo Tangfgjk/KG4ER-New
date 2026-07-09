@@ -4,10 +4,11 @@ from __future__ import annotations
 
 import unittest
 import tempfile
+import sys
 from argparse import Namespace
 from pathlib import Path
 
-from run_semantic_experiments import command_test
+from run_semantic_experiments import command_test, parse_args
 from semantic_experiment_utils import (
     DEFAULT_ALL_ABLATIONS,
     MODEL_VERSION,
@@ -72,8 +73,8 @@ class SemanticExperimentUtilsTest(unittest.TestCase):
 
                 os.chdir(cwd)
 
-    def test_model_version_marks_v8_noq_mirt_features(self) -> None:
-        self.assertIn("v8", MODEL_VERSION)
+    def test_model_version_marks_v9_noq_mirt_features(self) -> None:
+        self.assertIn("v9", MODEL_VERSION)
         self.assertIn("noq_mirt", MODEL_VERSION)
 
     def test_ablation_model_dir_keeps_full_backward_compatible(self) -> None:
@@ -88,27 +89,34 @@ class SemanticExperimentUtilsTest(unittest.TestCase):
         self.assertEqual(
             ablations,
             [
-                "full_state_hybrid",
-                "irt_only_ped",
-                "stat_only_ped",
-                "no_irt",
-                "no_stat_ped",
-                "no_mastery",
-                "no_forgetting",
-                "no_seq",
+                "full",
+                "hybrid_relation",
+                "id_only",
+                "relation_id_only",
+                "no_type_aware_scoring",
             ],
         )
 
     def test_parse_ablation_list_keeps_explicit_order(self) -> None:
         self.assertEqual(parse_ablation_list("full,no_cluster"), ["full", "no_cluster"])
 
+    def test_parse_args_defaults_to_raw_conve_score(self) -> None:
+        old_argv = sys.argv
+        try:
+            sys.argv = ["run_semantic_experiments.py", "--dataset", "Eedi"]
+            args = parse_args()
+        finally:
+            sys.argv = old_argv
+
+        self.assertEqual(args.forgetting_score_weight, 0.0)
+
     def test_test_command_passes_forgetting_score_weight(self) -> None:
-        args = Namespace(dataset="Eedi", cuda="auto", forgetting_score_weight=0.2, forgetting_exercise_batch_size=128)
+        args = Namespace(dataset="Eedi", cuda="auto", forgetting_score_weight=0.0, forgetting_exercise_batch_size=128)
 
         command = command_test(args, Path("graph"), Path("seed"), "full")
 
         self.assertIn("--forgetting-score-weight", command)
-        self.assertIn("0.2", command)
+        self.assertIn("0.0", command)
         self.assertIn("--forgetting-exercise-batch-size", command)
         self.assertIn("128", command)
 

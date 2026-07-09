@@ -37,6 +37,7 @@ VALID_MODEL_ABLATIONS = {
     "no_relation_strength",
     "discrete_relation",
     "hybrid_relation",
+    "relation_id_only",
     "id_only",
 }
 
@@ -56,8 +57,9 @@ class SemanticConvE(nn.Module):
         features are gated residual supplements, followed by LayerNorm.
 
     Relation representation:
-        relation ID embedding is the anchor. Relation type and continuous
-        relation strength are gated residual supplements, followed by LayerNorm.
+        the V9 full model uses relation type and continuous relation strength.
+        Relation-ID capacity is reserved for relation ablations such as
+        hybrid_relation, relation_id_only, and id_only.
     """
 
     def __init__(
@@ -204,7 +206,7 @@ class SemanticConvE(nn.Module):
             return set(self.numeric_feature_slices)
         if self.ablation_mode in {"no_irt", "stat_only_ped"}:
             return {"learner_irt", "exercise_irt", "irt"}
-        if self.ablation_mode in {"no_stat_ped", "irt_only_ped"}:
+        if self.ablation_mode in {"full", "no_stat_ped", "irt_only_ped"}:
             return {"learner_stat", "exercise_stat", "stat"}
         if self.ablation_mode == "no_exercise_irt":
             return {"exercise_irt"}
@@ -218,7 +220,7 @@ class SemanticConvE(nn.Module):
             groups.update({"learner_irt", "learner_stat", "cluster"})
         if self.ablation_mode in {"no_irt", "stat_only_ped", "no_learner_irt"}:
             groups.add("learner_irt")
-        if self.ablation_mode in {"no_stat_ped", "irt_only_ped"}:
+        if self.ablation_mode in {"full", "no_stat_ped", "irt_only_ped"}:
             groups.add("learner_stat")
         if self.ablation_mode == "no_cluster":
             groups.add("cluster")

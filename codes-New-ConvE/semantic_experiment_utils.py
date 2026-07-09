@@ -12,7 +12,7 @@ from pathlib import Path
 from typing import Any, Iterable, List, Sequence
 
 
-MODEL_VERSION = "semantic_conve_v8_noq_mirt_features"
+MODEL_VERSION = "semantic_conve_v9_noq_mirt_features"
 
 VALID_ABLATIONS = [
     "full",
@@ -38,20 +38,18 @@ VALID_ABLATIONS = [
     "no_relation_strength",
     "discrete_relation",
     "hybrid_relation",
+    "relation_id_only",
     "id_only",
 ]
 
 GRAPH_ABLATIONS = ["no_mastery", "no_forgetting", "no_seq"]
 
 DEFAULT_ALL_ABLATIONS = [
-    "full_state_hybrid",
-    "irt_only_ped",
-    "stat_only_ped",
-    "no_irt",
-    "no_stat_ped",
-    "no_mastery",
-    "no_forgetting",
-    "no_seq",
+    "full",
+    "hybrid_relation",
+    "id_only",
+    "relation_id_only",
+    "no_type_aware_scoring",
 ]
 
 DEFAULT_DATASETS = [
@@ -149,7 +147,7 @@ def parse_top_ks(value: str | Sequence[int]) -> List[int]:
 
 
 def ablation_model_dir(ablation: str) -> str:
-    if ablation in {"full", "full_state_hybrid"}:
+    if ablation == "full":
         return "SemanticConvE"
     return f"SemanticConvE_{ablation}"
 

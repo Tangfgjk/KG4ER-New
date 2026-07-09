@@ -160,7 +160,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--input-drop", "--input_drop", dest="input_drop", type=float, default=0.2)
     parser.add_argument("--hidden-drop", "--hidden_drop", dest="hidden_drop", type=float, default=0.2)
     parser.add_argument("--feat-drop", "--feat_drop", dest="feat_drop", type=float, default=0.3)
-    parser.add_argument("--forgetting-score-weight", type=float, default=0.2)
+    parser.add_argument("--forgetting-score-weight", type=float, default=0.0)
     parser.add_argument("--forgetting-exercise-batch-size", type=int, default=256)
     return parser.parse_args()
 
