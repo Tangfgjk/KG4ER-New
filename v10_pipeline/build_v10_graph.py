@@ -260,6 +260,75 @@ def main() -> None:
         )
         write_json(old_cos_dir / "stu2ex_recommend_full_precision.json", legacy_scores.tolist())
         write_matrix_json(old_cos_dir / "stu2ex_recommend.json", legacy_scores, decimals=6)
+        for file_name in [
+            "entities.dict",
+            "Q.txt",
+            "relations.dict",
+            "stu2know_mastery.json",
+            "stu2know_seq.json",
+            "stu2know_forget.json",
+            "stu2ex_forget.json",
+        ]:
+            copy_file(output_dir / file_name, old_cos_dir / file_name)
+        for src in output_dir.glob("*_uid_kc_response.txt"):
+            copy_file(src, old_cos_dir / src.name)
+        legacy_train_counts = write_triples(
+            old_cos_dir / "triples.txt",
+            train_students,
+            mastery,
+            sequence,
+            exercise_forget,
+            q_matrix,
+            legacy_scores,
+            include_rec=True,
+            top_k_rec=args.top_k_rec,
+        )
+        legacy_test_counts = write_triples(
+            old_cos_dir / "test_triples.txt",
+            test_students,
+            mastery,
+            sequence,
+            exercise_forget,
+            q_matrix,
+            legacy_scores,
+            include_rec=False,
+            top_k_rec=args.top_k_rec,
+        )
+        write_json(
+            old_cos_dir / "v10_graph_manifest.json",
+            {
+                "dataset": args.dataset,
+                "version": "v10_front_files_legacy_cos",
+                "source_graph_dir": source_graph_dir,
+                "output_dir": old_cos_dir,
+                "base_v10_dir": output_dir,
+                "state_sources": {
+                    "stu2know_mastery": mastery_source,
+                    "stu2know_seq": seq_source,
+                    "stu2know_forget": forget_source,
+                },
+                "forgetting": {
+                    "stu2ex_forget": "copied from V10 average exercise forgetting",
+                    "range": matrix_stats(exercise_forget),
+                },
+                "recommendation": {
+                    "sequence_term": "legacy_cos_sq",
+                    "distance_formula": "sqrt((delta1 - mastery_product)^2 + cos(Q, seq)^2 + (delta2 - exercise_forget)^2)",
+                    "ranking_precision": "full precision scores; stu2ex_recommend.json is rounded only for storage/readability",
+                    "delta_1": args.delta_1,
+                    "delta_2": args.delta_2,
+                    "top_k_rec": args.top_k_rec,
+                },
+                "split": {
+                    "source": split_source,
+                    "train_students": len(train_students),
+                    "test_students": len(test_students),
+                },
+                "relation_count": 304,
+                "triple_counts": {"train": legacy_train_counts, "test": legacy_test_counts},
+                "copied_evaluation_files": copied_eval,
+            },
+        )
 
     manifest = {
         "dataset": args.dataset,

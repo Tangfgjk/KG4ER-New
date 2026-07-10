@@ -1,4 +1,11 @@
-"""Semantic and pedagogical feature-aware ConvE model."""
+"""Semantic and pedagogical feature-aware ConvE model.
+
+V10-attn keeps the original ConvE ID embeddings as the representation anchor.
+Side information is treated as feature tokens, fused by self-attention, and
+added back as a residual supplement. This keeps the model close to the original
+ConvE while allowing semantic and pedagogical information to be used when it is
+helpful.
+"""
 
 from __future__ import annotations
 
@@ -28,6 +35,7 @@ VALID_MODEL_ABLATIONS = {
     "no_relation_aware",
     "no_type_aware_scoring",
     "no_semantic",
+    "no_text_semantic",
     "no_concept_semantic",
     "no_exercise_semantic",
     "no_pedagogical",
@@ -41,26 +49,76 @@ VALID_MODEL_ABLATIONS = {
     "id_only",
 }
 
-GATE_INITIAL_VALUE = 0.05
+RESIDUAL_INITIAL_VALUE = 0.05
 
 
-def _gate_logit(value: float = GATE_INITIAL_VALUE) -> float:
+def _logit(value: float = RESIDUAL_INITIAL_VALUE) -> float:
     value = min(max(value, 1e-6), 1.0 - 1e-6)
     return math.log(value / (1.0 - value))
 
 
-class SemanticConvE(nn.Module):
-    """ConvE with semantic, pedagogical and relation-aware representations.
+def _numeric_projector(input_dim: int, embedding_dim: int) -> nn.Module:
+    width = max(1, int(input_dim))
+    return nn.Sequential(
+        nn.Linear(width, embedding_dim),
+        nn.ReLU(),
+        nn.Linear(embedding_dim, embedding_dim),
+        nn.LayerNorm(embedding_dim),
+    )
 
-    Entity representation:
-        ID embedding is the anchor. Projected text, numeric, type, and cluster
-        features are gated residual supplements, followed by LayerNorm.
 
-    Relation representation:
-        the V9 full model uses relation type and continuous relation strength.
-        Relation-ID capacity is reserved for relation ablations such as
-        hybrid_relation, relation_id_only, and id_only.
+class FeatureAttentionFusion(nn.Module):
+    """Fuse a variable set of projected feature tokens.
+
+    Each feature source is first projected into the ConvE embedding dimension.
+    We then run a small self-attention block over the active tokens and mean-pool
+    the attended tokens. Rows without any active side feature return zeros.
     """
+
+    def __init__(self, embedding_dim: int, num_heads: int = 4, dropout: float = 0.1) -> None:
+        super().__init__()
+        heads = num_heads if embedding_dim % num_heads == 0 else 1
+        self.token_norm = nn.LayerNorm(embedding_dim)
+        self.attn = nn.MultiheadAttention(
+            embed_dim=embedding_dim,
+            num_heads=heads,
+            dropout=dropout,
+            batch_first=True,
+        )
+        self.output = nn.Sequential(
+            nn.Linear(embedding_dim, embedding_dim),
+            nn.ReLU(),
+            nn.Linear(embedding_dim, embedding_dim),
+        )
+        self.output_norm = nn.LayerNorm(embedding_dim)
+
+    def forward(self, tokens: torch.Tensor, active_mask: torch.Tensor) -> torch.Tensor:
+        if tokens.dim() != 3:
+            raise ValueError("tokens must be shaped [batch, feature_count, embedding_dim]")
+        if active_mask.dim() != 2:
+            raise ValueError("active_mask must be shaped [batch, feature_count]")
+        active = active_mask.bool()
+        output = torch.zeros(tokens.shape[0], tokens.shape[2], dtype=tokens.dtype, device=tokens.device)
+        valid_rows = active.any(dim=1)
+        if not valid_rows.any():
+            return output
+        valid_tokens = self.token_norm(tokens[valid_rows])
+        valid_mask = active[valid_rows]
+        attended, _ = self.attn(
+            valid_tokens,
+            valid_tokens,
+            valid_tokens,
+            key_padding_mask=~valid_mask,
+            need_weights=False,
+        )
+        weights = valid_mask.to(tokens.dtype).unsqueeze(-1)
+        pooled = (attended * weights).sum(dim=1) / weights.sum(dim=1).clamp_min(1.0)
+        output[valid_rows] = self.output_norm(self.output(pooled))
+        return output
+
+
+class SemanticConvE(nn.Module):
+    """ConvE with V10 attention-based side-feature fusion."""
 
     def __init__(
         self,
@@ -93,45 +151,38 @@ class SemanticConvE(nn.Module):
             raise ValueError(f"Unknown SemanticConvE ablation mode: {ablation_mode}")
         if embedding_dim % embedding_shape1 != 0:
             raise ValueError("embedding_dim must be divisible by embedding_shape1")
+
         self.nentity = nentity
         self.nrelation = nrelation
         self.embedding_dim = embedding_dim
         self.emb_dim1 = embedding_shape1
         self.emb_dim2 = embedding_dim // embedding_shape1
+        self.freeze_text_features = freeze_text_features
+        self.ablation_mode = ablation_mode
+        self.numeric_feature_slices = numeric_feature_slices or {"learner_irt": (0, 0), "exercise_irt": (0, 0)}
+        self.state_feature_slices = state_feature_slices or {}
+
+        learner_irt_width = self._slice_width("learner_irt")
+        exercise_irt_width = self._slice_width("exercise_irt")
 
         self.emb_e = nn.Embedding(nentity, embedding_dim)
-        self.entity_type_emb = nn.Embedding(4, embedding_dim)
-        self.cluster_emb = nn.Embedding(NO_CLUSTER_ID + 1, embedding_dim)
         self.relation_id_emb = nn.Embedding(nrelation, embedding_dim)
+        self.cluster_emb = nn.Embedding(NO_CLUSTER_ID + 1, embedding_dim)
         self.relation_type_emb = nn.Embedding(len(RELATION_TYPE_TO_ID), embedding_dim)
-        gate_init = torch.full((len(ENTITY_TYPE_TO_ID),), _gate_logit(), dtype=torch.float32)
-        self.raw_semantic_gate = nn.Parameter(gate_init.clone())
-        self.raw_pedagogical_gate = nn.Parameter(gate_init.clone())
-        self.raw_cluster_gate = nn.Parameter(gate_init.clone())
-        self.raw_entity_type_gate = nn.Parameter(gate_init.clone())
-        self.raw_relation_type_gate = nn.Parameter(torch.tensor(_gate_logit(), dtype=torch.float32))
-        self.raw_relation_strength_gate = nn.Parameter(torch.tensor(_gate_logit(), dtype=torch.float32))
 
-        self.text_projector = nn.Linear(text_dim, embedding_dim, bias=False)
-        self.numeric_projector = nn.Sequential(
-            nn.Linear(numeric_dim, embedding_dim),
-            nn.ReLU(),
-            nn.Linear(embedding_dim, embedding_dim),
+        self.text_projector = nn.Sequential(
+            nn.Linear(max(1, text_dim), embedding_dim, bias=False),
+            nn.LayerNorm(embedding_dim),
         )
-        state_dim = int(state_features.shape[1]) if state_features is not None else max(1, numeric_dim)
-        self.state_projector = nn.Sequential(
-            nn.Linear(state_dim, embedding_dim),
-            nn.ReLU(),
-            nn.Linear(embedding_dim, embedding_dim),
-        )
-        self.relation_strength_projector = nn.Sequential(
-            nn.Linear(1, embedding_dim),
-            nn.ReLU(),
-            nn.Linear(embedding_dim, embedding_dim),
-        )
+        self.learner_irt_projector = _numeric_projector(learner_irt_width, embedding_dim)
+        self.exercise_irt_projector = _numeric_projector(exercise_irt_width, embedding_dim)
+        self.relation_strength_projector = _numeric_projector(1, embedding_dim)
+        self.entity_fusion = FeatureAttentionFusion(embedding_dim)
+        self.relation_fusion = FeatureAttentionFusion(embedding_dim)
         self.entity_norm = nn.LayerNorm(embedding_dim)
-        self.state_norm = nn.LayerNorm(embedding_dim)
         self.relation_norm = nn.LayerNorm(embedding_dim)
+        self.raw_entity_residual_scale = nn.Parameter(torch.tensor(_logit(), dtype=torch.float32))
+        self.raw_relation_residual_scale = nn.Parameter(torch.tensor(_logit(), dtype=torch.float32))
 
         self.inp_drop = nn.Dropout(input_drop)
         self.hidden_drop = nn.Dropout(hidden_drop)
@@ -146,17 +197,13 @@ class SemanticConvE(nn.Module):
         self.register_buffer("text_features", text_features.detach().clone())
         self.register_buffer("numeric_features", numeric_features.detach().clone())
         if state_features is None:
-            state_features = torch.zeros((nentity, state_dim), dtype=torch.float32, device=numeric_features.device)
+            state_features = torch.zeros((nentity, 1), dtype=torch.float32, device=numeric_features.device)
         self.register_buffer("state_features", state_features.detach().clone())
         self.register_buffer("entity_type_ids", entity_type_ids.detach().clone())
         self.register_buffer("cluster_ids", cluster_ids.detach().clone())
         self.register_buffer("semantic_quality", semantic_quality.detach().clone())
         self.register_buffer("relation_type_ids", relation_type_ids.detach().clone())
         self.register_buffer("relation_strengths", relation_strengths.detach().clone())
-        self.freeze_text_features = freeze_text_features
-        self.ablation_mode = ablation_mode
-        self.numeric_feature_slices = numeric_feature_slices or {"irt": (0, numeric_dim), "stat": (numeric_dim, numeric_dim)}
-        self.state_feature_slices = state_feature_slices or {"learner_irt": (0, 0), "learner_stat": (0, 0)}
         self.init()
 
     @classmethod
@@ -181,153 +228,129 @@ class SemanticConvE(nn.Module):
 
     def init(self) -> None:
         xavier_normal_(self.emb_e.weight.data)
-        xavier_normal_(self.entity_type_emb.weight.data)
-        xavier_normal_(self.cluster_emb.weight.data)
         xavier_normal_(self.relation_id_emb.weight.data)
+        xavier_normal_(self.cluster_emb.weight.data)
         xavier_normal_(self.relation_type_emb.weight.data)
 
-    def _zero_feature_group(
-        self,
-        features: torch.Tensor,
-        slices: dict[str, tuple[int, int]],
-        names: set[str],
-    ) -> torch.Tensor:
-        if not names:
-            return features
-        output = features.clone()
-        for name in names:
-            start, end = slices.get(name, (0, 0))
-            if end > start:
-                output[:, start:end] = 0.0
-        return output
+    def _slice_width(self, name: str) -> int:
+        start, end = self.numeric_feature_slices.get(name, (0, 0))
+        return max(0, int(end - start))
 
-    def _numeric_groups_to_zero(self) -> set[str]:
-        if self.ablation_mode in {"no_pedagogical", "no_content_entity", "id_only"}:
-            return set(self.numeric_feature_slices)
-        if self.ablation_mode in {"no_irt", "stat_only_ped"}:
-            return {"learner_irt", "exercise_irt", "irt"}
-        if self.ablation_mode in {"full", "no_stat_ped", "irt_only_ped"}:
-            return {"learner_stat", "exercise_stat", "stat"}
-        if self.ablation_mode == "no_exercise_irt":
-            return {"exercise_irt"}
-        if self.ablation_mode == "no_learner_irt":
-            return {"learner_irt"}
-        return set()
+    def _slice_numeric(self, entity_ids: torch.Tensor, name: str) -> torch.Tensor:
+        start, end = self.numeric_feature_slices.get(name, (0, 0))
+        if end <= start:
+            return torch.zeros((entity_ids.numel(), 1), dtype=self.numeric_features.dtype, device=entity_ids.device)
+        return self.numeric_features[entity_ids, start:end]
 
-    def _state_groups_to_zero(self) -> set[str]:
-        groups: set[str] = set()
-        if self.ablation_mode in {"no_pedagogical", "no_content_entity", "id_only"}:
-            groups.update({"learner_irt", "learner_stat", "cluster"})
-        if self.ablation_mode in {"no_irt", "stat_only_ped", "no_learner_irt"}:
-            groups.add("learner_irt")
-        if self.ablation_mode in {"full", "no_stat_ped", "irt_only_ped"}:
-            groups.add("learner_stat")
-        if self.ablation_mode == "no_cluster":
-            groups.add("cluster")
-        if self.ablation_mode == "no_mastery":
-            groups.add("mastery")
-        if self.ablation_mode == "no_seq":
-            groups.add("sequence")
-        if self.ablation_mode == "no_forgetting":
-            groups.add("forgetting")
-        return groups
+    def _semantic_active(self, type_ids: torch.Tensor, entity_ids: torch.Tensor) -> torch.Tensor:
+        active = (
+            (type_ids == ENTITY_TYPE_TO_ID["kc"]) | (type_ids == ENTITY_TYPE_TO_ID["ex"])
+        ) & (self.semantic_quality[entity_ids, 0] > 0)
+        if self.ablation_mode in {"id_only", "no_content_entity", "no_semantic", "no_text_semantic"}:
+            active = torch.zeros_like(active)
+        elif self.ablation_mode == "no_concept_semantic":
+            active = active & (type_ids != ENTITY_TYPE_TO_ID["kc"])
+        elif self.ablation_mode == "no_exercise_semantic":
+            active = active & (type_ids != ENTITY_TYPE_TO_ID["ex"])
+        return active
 
-    def state_embedding(self, entity_ids: torch.Tensor) -> torch.Tensor:
-        state_features = self.state_features[entity_ids]
-        state_features = self._zero_feature_group(state_features, self.state_feature_slices, self._state_groups_to_zero())
-        return self.state_norm(self.state_projector(state_features))
+    def _learner_irt_active(self, type_ids: torch.Tensor) -> torch.Tensor:
+        active = type_ids == ENTITY_TYPE_TO_ID["uid"]
+        if self.ablation_mode in {
+            "id_only",
+            "no_content_entity",
+            "no_pedagogical",
+            "no_irt",
+            "stat_only_ped",
+            "no_learner_irt",
+        }:
+            active = torch.zeros_like(active)
+        return active
+
+    def _exercise_irt_active(self, type_ids: torch.Tensor) -> torch.Tensor:
+        active = type_ids == ENTITY_TYPE_TO_ID["ex"]
+        if self.ablation_mode in {
+            "id_only",
+            "no_content_entity",
+            "no_pedagogical",
+            "no_irt",
+            "stat_only_ped",
+            "no_exercise_irt",
+        }:
+            active = torch.zeros_like(active)
+        return active
+
+    def _cluster_active(self, type_ids: torch.Tensor) -> torch.Tensor:
+        active = type_ids == ENTITY_TYPE_TO_ID["uid"]
+        if self.ablation_mode in {"id_only", "no_content_entity", "no_pedagogical", "no_cluster"}:
+            active = torch.zeros_like(active)
+        return active
 
     def entity_embedding(self, entity_ids: torch.Tensor) -> torch.Tensor:
         id_emb = self.emb_e(entity_ids)
         if self.ablation_mode == "id_only":
             return self.entity_norm(id_emb)
+
         type_ids = self.entity_type_ids[entity_ids]
+        token_list: list[torch.Tensor] = []
+        mask_list: list[torch.Tensor] = []
 
         text_features = self.text_features[entity_ids]
         if self.freeze_text_features:
             text_features = text_features.detach()
-        if self.ablation_mode in {"no_semantic", "no_content_entity", "id_only"}:
-            semantic_emb = torch.zeros_like(id_emb)
-        else:
-            semantic_emb = self.text_projector(text_features)
-            semantic_gate = torch.sigmoid(self.raw_semantic_gate[type_ids]).unsqueeze(-1)
-            semantic_mask = torch.ones_like(semantic_gate)
-            if self.ablation_mode == "no_concept_semantic":
-                semantic_mask = (type_ids != ENTITY_TYPE_TO_ID["kc"]).float().unsqueeze(-1)
-            elif self.ablation_mode == "no_exercise_semantic":
-                semantic_mask = (type_ids != ENTITY_TYPE_TO_ID["ex"]).float().unsqueeze(-1)
-            semantic_emb = semantic_mask * semantic_gate * self.semantic_quality[entity_ids] * semantic_emb
+        if text_features.shape[1] == 0:
+            text_features = torch.zeros((entity_ids.numel(), 1), dtype=id_emb.dtype, device=entity_ids.device)
+        token_list.append(self.text_projector(text_features))
+        mask_list.append(self._semantic_active(type_ids, entity_ids))
 
-        if self.ablation_mode in {"no_pedagogical", "no_content_entity", "id_only"}:
-            pedagogical_emb = torch.zeros_like(id_emb)
-        else:
-            numeric_features = self.numeric_features[entity_ids]
-            numeric_features = self._zero_feature_group(numeric_features, self.numeric_feature_slices, self._numeric_groups_to_zero())
-            pedagogical_emb = self.numeric_projector(numeric_features)
-            pedagogical_gate = torch.sigmoid(self.raw_pedagogical_gate[type_ids]).unsqueeze(-1)
-            pedagogical_mask = (
-                (type_ids == ENTITY_TYPE_TO_ID["uid"]) | (type_ids == ENTITY_TYPE_TO_ID["ex"])
-            ).float().unsqueeze(-1)
-            if self.ablation_mode == "no_exercise_irt":
-                pedagogical_mask = pedagogical_mask * (type_ids != ENTITY_TYPE_TO_ID["ex"]).float().unsqueeze(-1)
-            elif self.ablation_mode == "no_learner_irt":
-                pedagogical_mask = pedagogical_mask * (type_ids != ENTITY_TYPE_TO_ID["uid"]).float().unsqueeze(-1)
-            pedagogical_emb = pedagogical_mask * pedagogical_gate * pedagogical_emb
+        learner_irt = self._slice_numeric(entity_ids, "learner_irt")
+        token_list.append(self.learner_irt_projector(learner_irt))
+        mask_list.append(self._learner_irt_active(type_ids))
 
-        type_gate = torch.sigmoid(self.raw_entity_type_gate[type_ids]).unsqueeze(-1)
-        type_emb = type_gate * self.entity_type_emb(type_ids)
-        if self.ablation_mode in {"no_pedagogical", "no_content_entity", "no_cluster", "id_only"}:
-            cluster_emb = torch.zeros_like(id_emb)
-        else:
-            cluster_emb = self.cluster_emb(self.cluster_ids[entity_ids].clamp(min=0, max=NO_CLUSTER_ID))
-            cluster_gate = torch.sigmoid(self.raw_cluster_gate[type_ids]).unsqueeze(-1)
-            cluster_mask = (type_ids == ENTITY_TYPE_TO_ID["uid"]).float().unsqueeze(-1)
-            cluster_emb = cluster_mask * cluster_gate * cluster_emb
-        entity_emb = self.entity_norm(id_emb + semantic_emb + pedagogical_emb + type_emb + cluster_emb)
-        if self.ablation_mode == "id_head_reference":
-            return entity_emb
-        learner_mask = (type_ids == ENTITY_TYPE_TO_ID["uid"]).unsqueeze(-1)
-        if learner_mask.any():
-            state_emb = self.state_embedding(entity_ids)
-            entity_emb = torch.where(learner_mask, state_emb, entity_emb)
-        return entity_emb
+        exercise_irt = self._slice_numeric(entity_ids, "exercise_irt")
+        token_list.append(self.exercise_irt_projector(exercise_irt))
+        mask_list.append(self._exercise_irt_active(type_ids))
 
-    def gate_values(self) -> dict[str, dict[str, float]]:
-        names_by_id = {idx: name for name, idx in ENTITY_TYPE_TO_ID.items()}
-        semantic = torch.sigmoid(self.raw_semantic_gate).detach().cpu().tolist()
-        pedagogical = torch.sigmoid(self.raw_pedagogical_gate).detach().cpu().tolist()
-        cluster = torch.sigmoid(self.raw_cluster_gate).detach().cpu().tolist()
-        entity_gates = {
-            names_by_id[idx]: {
-                "semantic": float(semantic[idx]),
-                "pedagogical": float(pedagogical[idx]),
-                "cluster": float(cluster[idx]),
-                "type": float(torch.sigmoid(self.raw_entity_type_gate[idx]).detach().cpu().item()),
-            }
-            for idx in sorted(names_by_id)
+        cluster_ids = self.cluster_ids[entity_ids].clamp(min=0, max=NO_CLUSTER_ID)
+        token_list.append(self.cluster_emb(cluster_ids))
+        mask_list.append(self._cluster_active(type_ids))
+
+        tokens = torch.stack(token_list, dim=1)
+        active_mask = torch.stack(mask_list, dim=1)
+        side_emb = self.entity_fusion(tokens, active_mask)
+        scale = torch.sigmoid(self.raw_entity_residual_scale)
+        return self.entity_norm(id_emb + scale * side_emb)
+
+    def gate_values(self) -> dict[str, object]:
+        return {
+            "fusion": "feature-token self-attention + residual addition to ID embedding",
+            "entity_residual_scale": float(torch.sigmoid(self.raw_entity_residual_scale).detach().cpu().item()),
+            "relation_residual_scale": float(torch.sigmoid(self.raw_relation_residual_scale).detach().cpu().item()),
+            "entity_features": {
+                "uid": ["theta_mirt_norm", "cluster_id"],
+                "ex": ["topic_v/text", "difficulty_mirt_norm", "discrimination_mirt_norm"],
+                "kc": ["concept_semantic"],
+            },
+            "relation_features": ["relation_id", "relation_type", "relation_strength"],
+            "ablation": self.ablation_mode,
         }
-        entity_gates["relation"] = {
-            "type": float(torch.sigmoid(self.raw_relation_type_gate).detach().cpu().item()),
-            "strength": float(torch.sigmoid(self.raw_relation_strength_gate).detach().cpu().item()),
-            "id": 0.0 if self.ablation_mode not in {"discrete_relation", "hybrid_relation", "id_only", "no_relation_aware", "relation_id_only"} else 1.0,
-        }
-        return entity_gates
 
     def relation_embedding(self, relation_ids: torch.Tensor) -> torch.Tensor:
         id_emb = self.relation_id_emb(relation_ids)
-        if self.ablation_mode in {"discrete_relation", "id_only", "no_relation_aware", "relation_id_only"}:
+        if self.ablation_mode in {"id_only", "no_relation_aware", "relation_id_only", "discrete_relation"}:
             return self.relation_norm(id_emb)
 
-        type_gate = torch.sigmoid(self.raw_relation_type_gate)
-        type_emb = type_gate * self.relation_type_emb(self.relation_type_ids[relation_ids])
-        if self.ablation_mode in {"no_relation_strength", "id_only"}:
-            strength_emb = torch.zeros_like(type_emb)
-        else:
-            strength_gate = torch.sigmoid(self.raw_relation_strength_gate)
-            strength_emb = strength_gate * self.relation_strength_projector(self.relation_strengths[relation_ids])
-        if self.ablation_mode == "hybrid_relation":
-            return self.relation_norm(id_emb + type_emb + strength_emb)
-        return self.relation_norm(type_emb + strength_emb)
+        type_token = self.relation_type_emb(self.relation_type_ids[relation_ids])
+        strength_token = self.relation_strength_projector(self.relation_strengths[relation_ids])
+        type_active = torch.ones_like(relation_ids, dtype=torch.bool)
+        strength_active = torch.ones_like(relation_ids, dtype=torch.bool)
+        if self.ablation_mode == "no_relation_strength":
+            strength_active = torch.zeros_like(strength_active)
+        tokens = torch.stack([type_token, strength_token], dim=1)
+        active_mask = torch.stack([type_active, strength_active], dim=1)
+        relation_side_emb = self.relation_fusion(tokens, active_mask)
+        scale = torch.sigmoid(self.raw_relation_residual_scale)
+        return self.relation_norm(id_emb + scale * relation_side_emb)
 
     def conve_transform(self, h_emb: torch.Tensor, r_emb: torch.Tensor) -> torch.Tensor:
         h_2d = h_emb.view(-1, 1, self.emb_dim1, self.emb_dim2)

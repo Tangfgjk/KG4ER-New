@@ -338,9 +338,9 @@ def main() -> None:
             "seed": args.seed,
             "ablation": args.ablation,
             "checkpoint": "best.pt" if best_path.exists() else "last.pt",
-            "entity_fusion": "type-aware gated semantic-pedagogical fusion",
-            "semantic_quality": "enabled",
-            "state_encoder": "learner entities use StateEncoder(state(uid)); uid ID embedding is not used for learner representation unless ablation=id_head_reference",
+            "entity_fusion": "V10 attention fusion: ID embedding + residual self-attention over active side-feature tokens",
+            "semantic_quality": "enabled as a fixed mask for text feature tokens",
+            "state_encoder": "disabled in V10-attn; learner entities use ID embedding plus theta_mirt_norm and cluster_id feature tokens",
             "gate_values": model.gate_values(),
         },
     )
@@ -352,11 +352,12 @@ def main() -> None:
             "dataset": args.dataset_name,
             "seed": args.seed,
             "ablation": args.ablation,
-            "enabled": args.ablation not in {"id_only", "id_head_reference"},
+            "enabled": False,
             "state_feature_slices": bundle.state_feature_slices,
             "state_feature_dim": int(bundle.state_features.shape[1]),
             "learner_representation": (
-                "all learner positions use StateEncoder(state(uid)); test_triples are not used for training by default"
+                "V10-attn does not replace learner ID with state-aware head embedding; "
+                "learner side features are fused as residual tokens"
             ),
             "include_test_triples": args.include_test_triples,
         },
@@ -369,8 +370,8 @@ def main() -> None:
             "dataset": args.dataset_name,
             "seed": args.seed,
             "ablation": args.ablation,
-            "full_relation_encoding": "relation type embedding + continuous strength projection; no relation ID embedding",
-            "relation_id_embedding_used": args.ablation in {"discrete_relation", "hybrid_relation", "id_only", "no_relation_aware", "relation_id_only"},
+            "full_relation_encoding": "relation ID embedding + residual self-attention over relation type and continuous strength tokens",
+            "relation_id_embedding_used": True,
             "relation_type_to_id": bundle.metadata.get("relation_type_to_id"),
         },
     )
@@ -395,8 +396,8 @@ def main() -> None:
             "feature_dir": bundle.metadata["feature_dir"],
             "text_embedding_model": bundle.metadata["text_manifest"].get("model"),
             "embedding_dim": args.embedding_dim,
-            "relation_encoding": "continuous: relation type embedding + projected relation strength; no independent relation-id embedding",
-            "entity_fusion": "type-aware gated semantic-pedagogical fusion; learner entities use state-aware encoder",
+            "relation_encoding": "relation ID embedding with attention-fused relation type and continuous relation strength residual",
+            "entity_fusion": "entity ID embedding with attention-fused semantic and pedagogical residual tokens",
             "state_feature_dim": int(bundle.state_features.shape[1]),
             "state_feature_slices": bundle.state_feature_slices,
             "numeric_feature_slices": bundle.numeric_feature_slices,

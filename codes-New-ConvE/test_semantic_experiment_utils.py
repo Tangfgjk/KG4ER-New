@@ -73,9 +73,9 @@ class SemanticExperimentUtilsTest(unittest.TestCase):
 
                 os.chdir(cwd)
 
-    def test_model_version_marks_v9_noq_mirt_features(self) -> None:
-        self.assertIn("v9", MODEL_VERSION)
-        self.assertIn("noq_mirt", MODEL_VERSION)
+    def test_model_version_marks_v10_attention_front_files(self) -> None:
+        self.assertIn("v10", MODEL_VERSION)
+        self.assertIn("attn", MODEL_VERSION)
 
     def test_ablation_model_dir_keeps_full_backward_compatible(self) -> None:
         self.assertEqual(ablation_model_dir("full"), "SemanticConvE")
@@ -90,10 +90,15 @@ class SemanticExperimentUtilsTest(unittest.TestCase):
             ablations,
             [
                 "full",
-                "hybrid_relation",
                 "id_only",
-                "relation_id_only",
+                "no_pedagogical",
+                "no_text_semantic",
+                "no_concept_semantic",
+                "no_relation_aware",
                 "no_type_aware_scoring",
+                "no_mastery",
+                "no_forgetting",
+                "no_seq",
             ],
         )
 

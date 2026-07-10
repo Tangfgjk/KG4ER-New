@@ -26,24 +26,43 @@ from prepare_mirt_inputs_v10 import eedi_valid_question_length
 from build_v10_graph import exercise_forgetting_average
 
 
-def cal_forget(t: int, t_prime: int, theta: float) -> float:
+def cal_forget(t: float, t_prime: float, theta: float) -> float:
     return 1.0 - float(np.exp(-abs(t - t_prime) / abs(theta)))
 
 
-def parse_timestamp_tokens(value: Any) -> list[int]:
-    timestamps: list[int] = []
+def normalize_numeric_timestamp(value: float, unit: str) -> float:
+    if unit == "milliseconds":
+        return value / 1000.0
+    if unit == "minutes":
+        return value * 60.0
+    if unit == "days":
+        return value * 86400.0
+    if unit == "seconds":
+        return value
+    if unit != "auto":
+        raise ValueError(f"unknown timestamp unit: {unit}")
+    abs_value = abs(value)
+    # Unix timestamps in milliseconds are usually around 1e12+.
+    # Seconds are around 1e9+. Smaller elapsed-time counters are kept as seconds.
+    if abs_value >= 1e12:
+        return value / 1000.0
+    return value
+
+
+def parse_timestamp_tokens(value: Any, unit: str = "auto") -> list[float]:
+    timestamps: list[float] = []
     for token in str(value).split(","):
         if not token or token == "-1":
             continue
         try:
-            timestamps.append(int(float(token)))
+            timestamps.append(float(normalize_numeric_timestamp(float(token), unit)))
             continue
         except ValueError:
             pass
         parsed = pd.to_datetime(token, errors="coerce")
         if pd.isna(parsed):
             raise ValueError(f"unrecognized timestamp token: {token}")
-        timestamps.append(int(parsed.timestamp()))
+        timestamps.append(float(parsed.timestamp()))
     return timestamps
 
 
@@ -74,10 +93,16 @@ def load_aligned_test_rows(dataset: str, source_dir: Path, graph_dir: Path, lear
     return rows
 
 
-def build_knowledge_forgetting(rows: list[dict[str, Any]], concept_count: int, theta: float) -> np.ndarray:
+def build_knowledge_forgetting(
+    rows: list[dict[str, Any]],
+    concept_count: int,
+    theta: float,
+    timestamp_unit: str,
+) -> tuple[np.ndarray, dict[str, Any]]:
     all_students: list[list[float]] = []
+    positive_deltas: list[float] = []
     for row in rows:
-        timestamps = parse_timestamp_tokens(row.get("timestamps", ""))
+        timestamps = parse_timestamp_tokens(row.get("timestamps", ""), unit=timestamp_unit)
         concept_steps = parse_concept_steps(row.get("concepts", ""))
         usable = min(len(timestamps), len(concept_steps))
         timestamps = timestamps[:usable]
@@ -91,11 +116,23 @@ def build_knowledge_forgetting(rows: list[dict[str, Any]], concept_count: int, t
             value = 1.0
             for j in range(usable - 1, -1, -1):
                 if concept_id in concept_steps[j]:
+                    delta = abs(float(last_timestamp) - float(timestamps[j]))
+                    positive_deltas.append(delta)
                     value = cal_forget(last_timestamp, timestamps[j], theta)
                     break
             student_forget.append(round(float(max(0.0, min(1.0, value))), 6))
         all_students.append(student_forget)
-    return np.asarray(all_students, dtype=np.float64)
+    delta_arr = np.asarray(positive_deltas, dtype=np.float64)
+    delta_stats = {
+        "timestamp_unit_normalized_to": "seconds",
+        "raw_timestamp_unit": timestamp_unit,
+        "theta_seconds": float(theta),
+        "positive_delta_count": int(delta_arr.size),
+        "median_delta_seconds": float(np.median(delta_arr)) if delta_arr.size else None,
+        "p90_delta_seconds": float(np.percentile(delta_arr, 90)) if delta_arr.size else None,
+        "max_delta_seconds": float(np.max(delta_arr)) if delta_arr.size else None,
+    }
+    return np.asarray(all_students, dtype=np.float64), delta_stats
 
 
 def parse_args() -> argparse.Namespace:
@@ -103,7 +140,13 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--dataset", required=True)
     parser.add_argument("--source-data-root", type=Path, default=source_data_root())
     parser.add_argument("--output-data-root", type=Path, default=output_data_root())
-    parser.add_argument("--theta", type=float, default=10000000)
+    parser.add_argument("--theta", type=float, default=10000000, help="Forgetting decay denominator in seconds.")
+    parser.add_argument(
+        "--timestamp-unit",
+        choices=["auto", "seconds", "milliseconds", "minutes", "days"],
+        default="auto",
+        help="Numeric timestamp unit. String dates are always parsed into Unix seconds.",
+    )
     parser.add_argument("--force", action="store_true")
     return parser.parse_args()
 
@@ -118,7 +161,12 @@ def main() -> None:
     learner_count = entity_count(entity2id, "uid")
     q_matrix = read_q_matrix(graph_dir / "Q.txt")
     rows = load_aligned_test_rows(args.dataset, source_dir, graph_dir, learner_count)
-    know_forget = build_knowledge_forgetting(rows, q_matrix.shape[1], theta=args.theta)
+    know_forget, delta_stats = build_knowledge_forgetting(
+        rows,
+        q_matrix.shape[1],
+        theta=args.theta,
+        timestamp_unit=args.timestamp_unit,
+    )
     ex_forget = exercise_forgetting_average(know_forget, q_matrix)
     forget_dir = output_dir / "forgetting"
     write_matrix_json(forget_dir / "stu2know_forget.json", know_forget, decimals=6)
@@ -131,6 +179,7 @@ def main() -> None:
             "dataset": args.dataset,
             "source_graph_dir": graph_dir,
             "theta": args.theta,
+            "timestamp": delta_stats,
             "student_count": int(know_forget.shape[0]),
             "concept_count": int(know_forget.shape[1]),
             "exercise_count": int(ex_forget.shape[1]),

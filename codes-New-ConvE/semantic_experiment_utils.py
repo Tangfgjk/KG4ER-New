@@ -12,7 +12,7 @@ from pathlib import Path
 from typing import Any, Iterable, List, Sequence
 
 
-MODEL_VERSION = "semantic_conve_v9_noq_mirt_features"
+MODEL_VERSION = "semantic_conve_v10_attn_front_files"
 
 VALID_ABLATIONS = [
     "full",
@@ -29,6 +29,7 @@ VALID_ABLATIONS = [
     "no_relation_aware",
     "no_type_aware_scoring",
     "no_semantic",
+    "no_text_semantic",
     "no_concept_semantic",
     "no_exercise_semantic",
     "no_pedagogical",
@@ -46,10 +47,15 @@ GRAPH_ABLATIONS = ["no_mastery", "no_forgetting", "no_seq"]
 
 DEFAULT_ALL_ABLATIONS = [
     "full",
-    "hybrid_relation",
     "id_only",
-    "relation_id_only",
+    "no_pedagogical",
+    "no_text_semantic",
+    "no_concept_semantic",
+    "no_relation_aware",
     "no_type_aware_scoring",
+    "no_mastery",
+    "no_forgetting",
+    "no_seq",
 ]
 
 DEFAULT_DATASETS = [

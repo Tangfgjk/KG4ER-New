@@ -255,7 +255,6 @@ def _learner_numeric(item: Dict[str, Any]) -> List[float]:
 def _learner_irt_numeric(item: Dict[str, Any]) -> List[float]:
     return [
         _as_float(item.get("theta_norm"), 0.5),
-        _as_float(item.get("overall_mastery_irt"), 0.5),
     ]
 
 
@@ -360,7 +359,7 @@ def load_semantic_feature_bundle(
     learner_data = read_json(entity_dir / "learner_pedagogy.json").get("learners", {})
     exercise_irt = read_json(irt_dir / "exercise_irt_features.json").get("exercises", {})
 
-    learner_irt_width = 2
+    learner_irt_width = 1
     exercise_irt_width = 2
     irt_width = learner_irt_width + exercise_irt_width
     learner_stat_width = 5
@@ -497,7 +496,6 @@ def load_semantic_feature_bundle(
             "text_manifest": text_manifest,
             "numeric_feature_names": [
                 "learner_theta_norm",
-                "learner_overall_mastery_irt",
                 "exercise_difficulty_norm",
                 "exercise_discrimination_norm",
                 "learner_overall_mastery_kt_mean",

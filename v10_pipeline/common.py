@@ -264,6 +264,17 @@ def write_matrix_json(path: Path, matrix: np.ndarray, decimals: int = 6) -> None
     write_json(path, rounded.tolist())
 
 
+def minmax(values: np.ndarray, default: float = 0.5) -> np.ndarray:
+    arr = np.asarray(values, dtype=np.float64)
+    if arr.size == 0:
+        return arr.copy()
+    minimum = float(np.min(arr))
+    maximum = float(np.max(arr))
+    if maximum - minimum <= 1e-12:
+        return np.full_like(arr, float(default), dtype=np.float64)
+    return (arr - minimum) / (maximum - minimum)
+
+
 def pick_existing(paths: Iterable[Path]) -> Path | None:
     for path in paths:
         if path.exists():
