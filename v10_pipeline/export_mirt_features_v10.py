@@ -10,7 +10,6 @@ import pandas as pd
 from sklearn.cluster import KMeans
 
 from common import (
-    copy_dir,
     locate_source_feature_dir,
     locate_source_graph_dir,
     minmax,
@@ -138,7 +137,8 @@ def copy_text_features(source_feature_dir: Path | None, output_feature_dir: Path
     if source_feature_dir is None:
         raise FileNotFoundError(
             "No source semantic feature directory found. "
-            "V10 reuses existing concept/exercise text and BGE embeddings instead of regenerating DeepSeek/BGE files."
+            "V10 can reuse concept/exercise text metadata, but text embeddings must be imported "
+            "from EKTM_mirt TopicRNNModel topic_v."
         )
     for rel in [
         Path("entity_features") / "concept_semantics.json",
@@ -150,9 +150,32 @@ def copy_text_features(source_feature_dir: Path | None, output_feature_dir: Path
             dst = output_feature_dir / rel
             dst.parent.mkdir(parents=True, exist_ok=True)
             dst.write_text(src.read_text(encoding="utf-8"), encoding="utf-8")
-    source_text = source_feature_dir / "text_embeddings"
-    if source_text.exists():
-        copy_dir(source_text, output_feature_dir / "text_embeddings")
+
+
+def require_ektm_text_embeddings(output_feature_dir: Path) -> None:
+    manifest_path = output_feature_dir / "text_embeddings" / "text_embedding_manifest.json"
+    if not manifest_path.exists():
+        raise FileNotFoundError(
+            f"Missing {manifest_path}. Strict V10 no longer accepts BGE text embeddings. "
+            "Run v10_pipeline/import_ektm_topic_embeddings_v10.py first."
+        )
+    manifest = read_json(manifest_path)
+    model_name = str(
+        manifest.get("model")
+        or manifest.get("model_name")
+        or manifest.get("source")
+        or ""
+    ).lower()
+    if "bge" in model_name or "sentence" in model_name:
+        raise ValueError(
+            f"Legacy BGE/SentenceTransformer text embeddings are not allowed in V10: {manifest_path}. "
+            "Import EKTM_mirt TopicRNNModel topic_v embeddings instead."
+        )
+    if "ektm" not in model_name and "topic" not in model_name:
+        raise ValueError(
+            f"Text embedding manifest does not identify EKTM_mirt topic_v source: {manifest_path}. "
+            "Expected model/source to contain EKTM or topic."
+        )
 
 
 def parse_args() -> argparse.Namespace:
@@ -195,6 +218,7 @@ def main() -> None:
 
     source_feature_dir = locate_source_feature_dir(args.dataset, source_dir, graph_dir)
     copy_text_features(source_feature_dir, output_feature_dir)
+    require_ektm_text_embeddings(output_feature_dir)
     write_json(output_feature_dir / "entity_features" / "learner_pedagogy.json", {"dataset": args.dataset, "learners": learner_features})
     write_json(output_feature_dir / "irt_features" / "exercise_irt_features.json", {"dataset": args.dataset, "exercises": exercise_features})
     write_json(
@@ -209,7 +233,11 @@ def main() -> None:
             "latent_dim": latent_dim,
             "exercise_count": len(exercise_features),
             "learner_count": len(learner_features),
-            "notes": "Concept/exercise text files are reused; learner/exercise pedagogical features are regenerated from V10 MIRT and V10 mastery.",
+            "notes": (
+                "Concept/exercise text metadata is reused. Learner/exercise pedagogical features are regenerated "
+                "from V10 MIRT and V10 mastery. Text embeddings must come from EKTM_mirt TopicRNNModel topic_v; "
+                "legacy BGE/SentenceTransformer embeddings are rejected."
+            ),
         },
     )
     print(f"saved V10 semantic feature files: {output_feature_dir}")

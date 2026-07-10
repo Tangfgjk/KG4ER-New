@@ -101,19 +101,29 @@ def validate_dataset(dataset: str, data_root: Path, allow_template: bool = False
     if manifest_path.exists():
         manifest = read_json(manifest_path)
         manifest_dim = int(manifest.get("embedding_dim") or 0)
-        if manifest_dim != 1024:
-            errors.append(f"text embedding dim should be 1024, got {manifest_dim}")
+        if manifest_dim <= 0:
+            errors.append(f"text embedding dim should be positive, got {manifest_dim}")
+        model_name = str(
+            manifest.get("model")
+            or manifest.get("model_name")
+            or manifest.get("source")
+            or ""
+        ).lower()
+        if "bge" in model_name or "sentence" in model_name:
+            errors.append("legacy BGE/SentenceTransformer text embeddings are not allowed in V10")
+        if "ektm" not in model_name and "topic" not in model_name:
+            errors.append("text embedding manifest must identify EKTM_mirt TopicRNNModel topic_v source")
     if (feature_dir / "text_embeddings" / "concept_text_embeddings.npy").exists():
         concept_embeddings = np.load(feature_dir / "text_embeddings" / "concept_text_embeddings.npy", mmap_mode="r")
         concept_embedding_shape = list(concept_embeddings.shape)
-        if concept_embeddings.ndim != 2 or concept_embeddings.shape[1] != 1024:
+        if concept_embeddings.ndim != 2 or (manifest_dim and concept_embeddings.shape[1] != manifest_dim):
             errors.append(f"bad concept embedding shape: {concept_embedding_shape}")
         if concept_count and concept_embeddings.shape[0] != concept_count:
             errors.append(f"concept embedding rows {concept_embeddings.shape[0]} != concept count {concept_count}")
     if (feature_dir / "text_embeddings" / "exercise_text_embeddings.npy").exists():
         exercise_embeddings = np.load(feature_dir / "text_embeddings" / "exercise_text_embeddings.npy", mmap_mode="r")
         exercise_embedding_shape = list(exercise_embeddings.shape)
-        if exercise_embeddings.ndim != 2 or exercise_embeddings.shape[1] != 1024:
+        if exercise_embeddings.ndim != 2 or (manifest_dim and exercise_embeddings.shape[1] != manifest_dim):
             errors.append(f"bad exercise embedding shape: {exercise_embedding_shape}")
         if exercise_count and exercise_embeddings.shape[0] != exercise_count:
             errors.append(f"exercise embedding rows {exercise_embeddings.shape[0]} != exercise count {exercise_count}")

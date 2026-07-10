@@ -146,6 +146,21 @@ def validate_dataset(dataset: str, data_root: Path) -> dict[str, Any]:
     }
     if not all(feature_status.values()):
         warnings.append(f"semantic feature directory is incomplete: {feature_status}")
+    if feature_status["text_manifest"]:
+        text_manifest = read_json(feature_dir / "text_embeddings" / "text_embedding_manifest.json")
+        model_name = str(
+            text_manifest.get("model")
+            or text_manifest.get("model_name")
+            or text_manifest.get("source")
+            or ""
+        ).lower()
+        if "bge" in model_name or "sentence" in model_name:
+            errors.append(
+                "text embeddings are legacy BGE/SentenceTransformer features; "
+                "strict V10 should use EKTM_mirt TopicRNNModel topic_v embeddings"
+            )
+        if "ektm" not in model_name and "topic" not in model_name:
+            errors.append("text embedding manifest must identify EKTM_mirt TopicRNNModel topic_v source")
 
     manifest = read_json(graph_dir / "v10_graph_manifest.json") if (graph_dir / "v10_graph_manifest.json").exists() else {}
     report.update(

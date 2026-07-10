@@ -145,13 +145,17 @@ ER/KG4ER-New/data/<dataset>/v10/mirt/inputs/
 
 ### 固定复用
 
-知识点 definition、题目文本或结构化文本、BGE 文本向量属于固定语义文件。DeepSeek 已生成的 definition 不需要重复调用，BGE 向量也不需要重复生成。
+知识点 definition、题目文本或结构化文本元数据属于固定语义文件。DeepSeek 已生成的 definition 不需要重复调用。
+
+但文本向量不能再直接视为固定可复用文件。早期版本中的 `text_embeddings/*.npy` 来自 BGE-M3 / SentenceTransformer，只能作为历史调试特征。严格 V10 若要与 EKTM_mirt 保持一致，题目文本向量应由 EKTM_mirt 的 `TopicRNNModel` / Bi-GRU 导出 `topic_v` 后生成。
 
 ### 重新生成
 
-与学生状态或教育学参数相关的文件需要基于 V10 重新生成，包括：
+与学生状态、教育学参数以及 EKTM_mirt 文本表示相关的文件需要基于 V10 重新生成，包括：
 
 ```text
+semantic_kg_features/text_embeddings/exercise_text_embeddings.npy
+semantic_kg_features/text_embeddings/text_embedding_manifest.json
 semantic_kg_features/entity_features/learner_pedagogy.json
 semantic_kg_features/irt_features/exercise_irt_features.json
 feature_generation_manifest.json
@@ -162,6 +166,8 @@ feature_generation_manifest.json
 ```text
 ER/KG4ER-New/v10_pipeline/export_mirt_features_v10.py
 ```
+
+其中 `exercise_text_embeddings.npy` 由独立的 EKTM_mirt topic embedding 导入脚本生成。V10 代码已经禁用旧 BGE/SentenceTransformer 向量：生成、校验和训练加载阶段都会拒绝 BGE manifest。
 
 ## 8. 新增统计与校验
 
@@ -206,4 +212,3 @@ all-relation type-constrained negative sampling
 - `mlkc/pkc/exfr` 替换 tail 时只采 learner。
 
 这样比 KG4EX 的全实体负采样更符合当前图中实体类型语义。
-

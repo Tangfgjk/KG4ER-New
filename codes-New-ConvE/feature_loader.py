@@ -187,9 +187,26 @@ def _load_text_embeddings(feature_dir: Path) -> tuple[Dict[str, np.ndarray], int
     manifest_path = emb_dir / "text_embedding_manifest.json"
     if not manifest_path.exists():
         raise FileNotFoundError(
-            f"Missing {manifest_path}. Run semantic_features/build_text_embeddings.py first."
+            f"Missing {manifest_path}. Strict V10 requires EKTM_mirt TopicRNNModel topic_v embeddings. "
+            "Run v10_pipeline/import_ektm_topic_embeddings_v10.py first."
         )
     manifest = read_json(manifest_path)
+    model_name = str(
+        manifest.get("model")
+        or manifest.get("model_name")
+        or manifest.get("source")
+        or ""
+    ).lower()
+    if "bge" in model_name or "sentence" in model_name:
+        raise ValueError(
+            f"Legacy BGE/SentenceTransformer text embeddings are not allowed: {manifest_path}. "
+            "Use EKTM_mirt TopicRNNModel topic_v embeddings for V10."
+        )
+    if "ektm" not in model_name and "topic" not in model_name:
+        raise ValueError(
+            f"Text embedding manifest must identify EKTM_mirt topic_v source: {manifest_path}. "
+            "Expected model/source to contain EKTM or topic."
+        )
     concept_embeddings = np.load(emb_dir / manifest["files"]["concept_text_embeddings"])
     exercise_embeddings = np.load(emb_dir / manifest["files"]["exercise_text_embeddings"])
     text_by_entity: Dict[str, np.ndarray] = {}

@@ -138,9 +138,30 @@ foreach ($ds in $datasets) {
 
 调试时如果暂时没有新 DKT/EKTM_mirt 导出，可加 `--allow-existing-state`，但正式实验不要使用。
 
-## 8. 生成 V10 语义与教育学特征
+## 8. 导入 EKTM_mirt topic_v 文本向量
 
-知识点 definition、题目文本和 BGE 文本向量复用已有固定文件；学习者和题目教育学特征从 V10 MIRT 与 V10 mastery 重新生成。
+知识点 definition、题目文本或结构化文本元数据可以复用已有固定文件；但正式 V10 的题目文本向量不再使用早期 BGE-M3 向量，而必须来自 EKTM_mirt 中 `TopicRNNModel` / Bi-GRU 导出的 `topic_v`。
+
+当 EKTM_mirt 的题目文本向量矩阵导出后，使用下面命令导入。矩阵行顺序必须与 `ex0, ex1, ..., exN` 一致。
+
+```powershell
+python ER\KG4ER-New\v10_pipeline\import_ektm_topic_embeddings_v10.py `
+  --dataset Eedi `
+  --topic-embedding-file "C:\path\to\Eedi_ektm_topic_v.npy" `
+  --force
+```
+
+输出位置：
+
+```text
+ER/KG4ER-New/data/<dataset>/v10/semantic_kg_features/text_embeddings/
+```
+
+说明：知识点文本 embedding 会写成零向量，因为 EKTM_mirt 没有使用知识点 definition 作为文本编码输入；知识点 definition 仍保留在 `concept_semantics.json` 中用于解释和文字描述。
+
+## 9. 生成 V10 语义与教育学特征
+
+学习者和题目教育学特征从 V10 MIRT 与 V10 mastery 重新生成。
 
 ```powershell
 foreach ($ds in $datasets) {
@@ -150,7 +171,7 @@ foreach ($ds in $datasets) {
 }
 ```
 
-## 9. 校验前置文件
+## 10. 校验前置文件
 
 ```powershell
 python ER\KG4ER-New\v10_pipeline\validate_v10_front_files.py `
@@ -163,7 +184,7 @@ python ER\KG4ER-New\v10_pipeline\validate_v10_front_files.py `
 ER/KG4ER-New/data/v10_validation_report.json
 ```
 
-## 10. 训练 SemanticConvE
+## 11. 训练 SemanticConvE
 
 ```powershell
 python ER\KG4ER-New\codes-New-ConvE\run_semantic_experiments.py `
