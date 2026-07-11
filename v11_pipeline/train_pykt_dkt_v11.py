@@ -401,7 +401,16 @@ def patch_pykt_for_pkc(pykt_copy: Path) -> dict[str, Any]:
         if old_train not in train_text:
             raise RuntimeError(f"Cannot locate DKT loss block to patch in {train_path}")
         train_text = train_text.replace(old_train, new_train, 1)
-        train_path.write_text(train_text, encoding="utf-8")
+
+    # pyKT selects the best checkpoint by validation AUC. V11 PKC-DKT sets all
+    # observed next-concept labels to 1, so ROC-AUC is undefined. Initialize the
+    # variables defensively and let the patched evaluator return accuracy as the
+    # selection score for single-class labels.
+    train_text = train_text.replace(
+        "max_auc, best_epoch = 0, -1\n    train_step = 0",
+        "max_auc, best_epoch = 0, -1\n    validauc, validacc = 0.0, 0.0\n    testauc, testacc = -1, -1\n    window_testauc, window_testacc = -1, -1\n    train_step = 0",
+    )
+    train_path.write_text(train_text, encoding="utf-8")
 
     eval_text = eval_path.read_text(encoding="utf-8")
     old_eval = "t = torch.masked_select(rshft, sm).detach().cpu()"
@@ -411,7 +420,28 @@ def patch_pykt_for_pkc(pykt_copy: Path) -> dict[str, Any]:
     )
     if new_eval not in eval_text:
         eval_text = eval_text.replace(old_eval, new_eval, 1)
-        eval_path.write_text(eval_text, encoding="utf-8")
+
+    old_auc_block = (
+        "        auc = metrics.roc_auc_score(y_true=ts, y_score=ps)\n"
+        "\n"
+        "        prelabels = [1 if p >= 0.5 else 0 for p in ps]\n"
+        "        acc = metrics.accuracy_score(ts, prelabels)"
+    )
+    new_auc_block = (
+        "        prelabels = [1 if p >= 0.5 else 0 for p in ps]\n"
+        "        acc = metrics.accuracy_score(ts, prelabels)\n"
+        "        if len(np.unique(ts)) < 2:\n"
+        "            # V11 PKC-DKT uses positive-only next-concept labels; ROC-AUC is undefined.\n"
+        "            # Use accuracy as the validation selection score so training and checkpointing continue.\n"
+        "            auc = float(acc)\n"
+        "        else:\n"
+        "            auc = metrics.roc_auc_score(y_true=ts, y_score=ps)"
+    )
+    if new_auc_block not in eval_text:
+        if old_auc_block not in eval_text:
+            raise RuntimeError(f"Cannot locate evaluate AUC block to patch in {eval_path}")
+        eval_text = eval_text.replace(old_auc_block, new_auc_block, 1)
+    eval_path.write_text(eval_text, encoding="utf-8")
     return {"train_model": train_path, "evaluate_model": eval_path}
 
 
