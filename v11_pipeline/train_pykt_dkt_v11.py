@@ -497,8 +497,10 @@ def export_seq_with_checkpoint(pykt_copy: Path, checkpoint_dir: Path, test_seque
         sys.path.insert(0, str(this_dir))
     from export_seq_from_dkt_v11 import export_seq, load_pykt_model
 
-    model, data_config = load_pykt_model(pykt_copy, checkpoint_dir, device, "qid_model.ckpt")
-    return export_seq(
+    last_checkpoint = checkpoint_dir / "qid_last_model.ckpt"
+    checkpoint_file = "qid_last_model.ckpt" if last_checkpoint.exists() else "qid_model.ckpt"
+    model, data_config = load_pykt_model(pykt_copy, checkpoint_dir, device, checkpoint_file)
+    summary = export_seq(
         model,
         data_config,
         test_sequences,
@@ -507,7 +509,9 @@ def export_seq_with_checkpoint(pykt_copy: Path, checkpoint_dir: Path, test_seque
         expected_students=expected_students,
         expected_concepts=expected_concepts,
     )
-
+    summary["checkpoint_file"] = checkpoint_file
+    summary["checkpoint_policy"] = "prefer_last_model_for_v11_pkc_dkt"
+    return summary
 
 def main() -> None:
     args = parse_args()
@@ -569,7 +573,9 @@ def main() -> None:
                 "dataset": args.dataset,
                 "dataset_name": dataset_name,
                 "checkpoint_dir": checkpoint_dir,
-                "checkpoint_file": "qid_model.ckpt",
+                "best_checkpoint_file": "qid_model.ckpt",
+                "last_checkpoint_file": "qid_last_model.ckpt",
+                "export_checkpoint_policy": "prefer qid_last_model.ckpt because V11 PKC-DKT validation AUC is not informative",
                 "params": params,
                 "patch_report": patch_report,
                 "register_report": register_report,
@@ -594,7 +600,8 @@ def main() -> None:
             "dataset": args.dataset,
             "source": "V11 patched pyKT DKT; next observed concept labels are set to 1",
             "checkpoint_dir": checkpoint_dir,
-            "checkpoint_file": "qid_model.ckpt",
+            "checkpoint_file": summary.get("checkpoint_file"),
+            "checkpoint_policy": summary.get("checkpoint_policy"),
             "output_file": output_file,
             "root_copy": pykt_copy,
             "summary": summary,
