@@ -1,3 +1,7 @@
-numpy
+﻿numpy
+pandas
+scikit-learn
 torch
 tqdm
+wandb
+einops
