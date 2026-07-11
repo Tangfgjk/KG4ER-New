@@ -18,6 +18,7 @@ from tqdm import tqdm
 from common import (
     ensure_large_csv_field_limit,
     entity_count,
+    jsonable,
     locate_source_graph_dir,
     locate_test_sequences,
     output_data_root,
@@ -30,6 +31,22 @@ from common import (
 )
 from pkc_dkt_model_v10 import PKCDKT
 from prepare_mirt_inputs_v10 import eedi_valid_question_length
+
+
+def load_checkpoint(path: Path, device: torch.device) -> dict[str, Any]:
+    """Load checkpoints saved by this script across PyTorch versions."""
+    try:
+        return torch.load(path, map_location=device, weights_only=False)
+    except TypeError:
+        return torch.load(path, map_location=device)
+
+
+def build_model_from_state_dict(concept_count: int, state_dict: dict[str, torch.Tensor], dropout: float, device: torch.device) -> PKCDKT:
+    embed_size = int(state_dict["input_embedding.weight"].shape[1])
+    hidden_size = int(state_dict["rnn.weight_hh_l0"].shape[1])
+    model = PKCDKT(concept_count, embed_size=embed_size, hidden_size=hidden_size, dropout=dropout).to(device)
+    model.load_state_dict(state_dict)
+    return model
 
 
 def parse_concept_steps(value: Any) -> list[list[int]]:
@@ -229,6 +246,11 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--seed", type=int, default=2024)
     parser.add_argument("--device", default="cuda" if torch.cuda.is_available() else "cpu")
     parser.add_argument("--force", action="store_true")
+    parser.add_argument(
+        "--export-only",
+        action="store_true",
+        help="Skip training and export stu2know_seq.json from an existing best.pt checkpoint.",
+    )
     return parser.parse_args()
 
 
@@ -252,44 +274,50 @@ def main() -> None:
     output_dir.mkdir(parents=True, exist_ok=True)
     best_path = output_dir / "best.pt"
     last_path = output_dir / "last.pt"
-    if best_path.exists() and not args.force:
+    if best_path.exists() and not args.force and not args.export_only:
         raise FileExistsError(f"{best_path} exists. Use --force to retrain.")
-
-    dataset = PKCSequenceDataset(train_path, concept_count=concept_count)
-    if len(dataset) == 0:
-        raise ValueError(f"No usable PKC-DKT sequences in {train_path}")
-    train_set, valid_set = split_dataset(dataset, args.valid_ratio, args.seed)
-    train_loader = DataLoader(train_set, batch_size=args.batch_size, shuffle=True, collate_fn=collate_batch)
-    valid_loader = DataLoader(valid_set, batch_size=args.batch_size, shuffle=False, collate_fn=collate_batch)
     model = PKCDKT(concept_count, embed_size=args.embed_size, hidden_size=args.hidden_size, dropout=args.dropout).to(device)
-    optimizer = torch.optim.Adam(model.parameters(), lr=args.learning_rate)
     best_valid = float("inf")
     best_epoch = 0
     history: list[dict[str, float]] = []
-    for epoch in range(args.epochs):
-        train_loss = run_epoch(model, train_loader, device, optimizer)
-        with torch.no_grad():
-            valid_loss = run_epoch(model, valid_loader, device, None)
-        history.append({"epoch": epoch + 1, "train_loss": train_loss, "valid_loss": valid_loss})
-        payload = {
-            "model": "PKCDKT",
-            "epoch": epoch + 1,
-            "model_state_dict": model.state_dict(),
-            "optimizer_state_dict": optimizer.state_dict(),
-            "config": vars(args),
-            "concept_count": concept_count,
-            "train_loss": train_loss,
-            "valid_loss": valid_loss,
-        }
-        torch.save(payload, last_path)
-        if valid_loss < best_valid:
-            best_valid = valid_loss
-            best_epoch = epoch + 1
-            torch.save(payload, best_path)
-        print(f"[Epoch {epoch + 1}] train_loss={train_loss:.6f} valid_loss={valid_loss:.6f} best_epoch={best_epoch}")
 
-    best_payload = torch.load(best_path, map_location=device)
-    model.load_state_dict(best_payload["model_state_dict"])
+    if args.export_only:
+        if not best_path.exists():
+            raise FileNotFoundError(f"{best_path} does not exist. Train PKC-DKT before using --export-only.")
+    else:
+        dataset = PKCSequenceDataset(train_path, concept_count=concept_count)
+        if len(dataset) == 0:
+            raise ValueError(f"No usable PKC-DKT sequences in {train_path}")
+        train_set, valid_set = split_dataset(dataset, args.valid_ratio, args.seed)
+        train_loader = DataLoader(train_set, batch_size=args.batch_size, shuffle=True, collate_fn=collate_batch)
+        valid_loader = DataLoader(valid_set, batch_size=args.batch_size, shuffle=False, collate_fn=collate_batch)
+        optimizer = torch.optim.Adam(model.parameters(), lr=args.learning_rate)
+        for epoch in range(args.epochs):
+            train_loss = run_epoch(model, train_loader, device, optimizer)
+            with torch.no_grad():
+                valid_loss = run_epoch(model, valid_loader, device, None)
+            history.append({"epoch": epoch + 1, "train_loss": train_loss, "valid_loss": valid_loss})
+            payload = {
+                "model": "PKCDKT",
+                "epoch": epoch + 1,
+                "model_state_dict": model.state_dict(),
+                "optimizer_state_dict": optimizer.state_dict(),
+                "config": jsonable(vars(args)),
+                "concept_count": concept_count,
+                "train_loss": train_loss,
+                "valid_loss": valid_loss,
+            }
+            torch.save(payload, last_path)
+            if valid_loss < best_valid:
+                best_valid = valid_loss
+                best_epoch = epoch + 1
+                torch.save(payload, best_path)
+            print(f"[Epoch {epoch + 1}] train_loss={train_loss:.6f} valid_loss={valid_loss:.6f} best_epoch={best_epoch}")
+
+    best_payload = load_checkpoint(best_path, device)
+    best_epoch = int(best_payload.get("epoch", best_epoch))
+    best_valid = float(best_payload.get("valid_loss", best_valid))
+    model = build_model_from_state_dict(concept_count, best_payload["model_state_dict"], args.dropout, device)
     export_summary = export_test_sequence_predictions(
         model,
         args.dataset,
@@ -312,6 +340,7 @@ def main() -> None:
             "learner_count": learner_count,
             "best_epoch": best_epoch,
             "best_valid_loss": best_valid,
+            "export_only": bool(args.export_only),
             "history": history,
             "export": export_summary,
         },

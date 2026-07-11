@@ -152,6 +152,87 @@ def copy_text_features(source_feature_dir: Path | None, output_feature_dir: Path
             dst.write_text(src.read_text(encoding="utf-8"), encoding="utf-8")
 
 
+def build_entity_feature_index(
+    entity2id: dict[str, int],
+    exercise_features: dict[str, dict[str, Any]],
+    learner_features: dict[str, dict[str, Any]],
+    output_feature_dir: Path,
+) -> dict[str, Any]:
+    text_dir = output_feature_dir / "text_embeddings"
+    concept_text_path = text_dir / "concept_text_embeddings.npy"
+    exercise_text_path = text_dir / "exercise_text_embeddings.npy"
+
+    concept_text_shape = list(np.load(concept_text_path).shape) if concept_text_path.exists() else None
+    exercise_text_shape = list(np.load(exercise_text_path).shape) if exercise_text_path.exists() else None
+
+    concepts = sorted((name for name in entity2id if name.startswith("kc")), key=lambda x: entity2id[x])
+    exercises = sorted((name for name in entity2id if name.startswith("ex")), key=lambda x: entity2id[x])
+    learners = sorted((name for name in entity2id if name.startswith("uid")), key=lambda x: entity2id[x])
+
+    return {
+        "version": "v11_entity_feature_index",
+        "entity_count": len(entity2id),
+        "entity_groups": {
+            "learners": {
+                "count": len(learners),
+                "entities": learners,
+                "feature_file": "entity_features/learner_pedagogy.json",
+                "feature_key": "learners",
+                "feature_count": len(learner_features),
+                "numeric_features": [
+                    "theta_norm",
+                    "overall_mastery_irt",
+                    "overall_mastery_kt_mean",
+                    "correct_rate",
+                    "history_length",
+                    "concept_mastery_mean",
+                    "concept_mastery_std",
+                    "cluster_id",
+                ],
+                "text_embedding": None,
+            },
+            "exercises": {
+                "count": len(exercises),
+                "entities": exercises,
+                "semantic_file": "entity_features/exercise_semantics.json",
+                "irt_feature_file": "irt_features/exercise_irt_features.json",
+                "feature_key": "exercises",
+                "feature_count": len(exercise_features),
+                "numeric_features": [
+                    "difficulty_mirt_norm",
+                    "discrimination_mirt_norm",
+                    "correct_rate",
+                    "error_rate",
+                    "interaction_count",
+                ],
+                "text_embedding": {
+                    "file": "text_embeddings/exercise_text_embeddings.npy",
+                    "shape": exercise_text_shape,
+                    "source": "EKTM_mirt TopicRNNModel / Bi-GRU",
+                },
+            },
+            "concepts": {
+                "count": len(concepts),
+                "entities": concepts,
+                "semantic_file": "entity_features/concept_semantics.json",
+                "feature_key": "concepts",
+                "feature_count": len(concepts),
+                "numeric_features": [],
+                "text_embedding": {
+                    "file": "text_embeddings/concept_text_embeddings.npy",
+                    "shape": concept_text_shape,
+                    "source": "same trained EKTM_mirt TopicRNNModel / Bi-GRU encoder",
+                },
+            },
+        },
+        "notes": (
+            "This file is an audit index for SemanticConvE feature alignment. "
+            "The runtime feature loader aligns features by entity ids from entities.dict; "
+            "this index records which feature files correspond to uid/ex/kc entities."
+        ),
+    }
+
+
 def require_ektm_text_embeddings(output_feature_dir: Path) -> None:
     manifest_path = output_feature_dir / "text_embeddings" / "text_embedding_manifest.json"
     if not manifest_path.exists():
@@ -221,6 +302,10 @@ def main() -> None:
     require_ektm_text_embeddings(output_feature_dir)
     write_json(output_feature_dir / "entity_features" / "learner_pedagogy.json", {"dataset": args.dataset, "learners": learner_features})
     write_json(output_feature_dir / "irt_features" / "exercise_irt_features.json", {"dataset": args.dataset, "exercises": exercise_features})
+    write_json(
+        output_feature_dir / "entity_features" / "entity_feature_index.json",
+        build_entity_feature_index(entity2id, exercise_features, learner_features, output_feature_dir),
+    )
     write_json(
         output_feature_dir / "feature_generation_manifest.json",
         {
