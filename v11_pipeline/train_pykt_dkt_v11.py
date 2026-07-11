@@ -40,7 +40,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--source-data-root", type=Path, default=source_data_root())
     parser.add_argument("--output-data-root", type=Path, default=output_data_root())
     parser.add_argument("--pykt-root", type=Path, default=project_root() / "ER" / "pykt-toolkit-main")
-    parser.add_argument("--epochs", type=int, default=50)
+    parser.add_argument("--epochs", type=int, default=30)
     parser.add_argument("--batch-size", type=int, default=32)
     parser.add_argument("--learning-rate", type=float, default=0.001)
     parser.add_argument("--emb-size", type=int, default=200)
@@ -409,6 +409,12 @@ def patch_pykt_for_pkc(pykt_copy: Path) -> dict[str, Any]:
     train_text = train_text.replace(
         "max_auc, best_epoch = 0, -1\n    train_step = 0",
         "max_auc, best_epoch = 0, -1\n    validauc, validacc = 0.0, 0.0\n    testauc, testacc = -1, -1\n    window_testauc, window_testacc = -1, -1\n    train_step = 0",
+    )
+    train_text = train_text.replace(
+        "        if i - best_epoch >= 10:\n            break",
+        "        # V11 PKC-DKT uses the last checkpoint for seq export, so do not early-stop by AUC.\n"
+        "        if False and i - best_epoch >= 10:\n"
+        "            break",
     )
     train_path.write_text(train_text, encoding="utf-8")
 

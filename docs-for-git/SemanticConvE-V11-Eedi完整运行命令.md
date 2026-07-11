@@ -1,25 +1,22 @@
-# SemanticConvE V11：Eedi 数据集完整运行命令
-
-本文档只写 Eedi 数据集的 V11 运行流程。所有命令默认在项目根目录执行：
+﻿# SemanticConvE V11锛欵edi 鏁版嵁闆嗗畬鏁磋繍琛屽懡浠?
+鏈枃妗ｅ彧鍐?Eedi 鏁版嵁闆嗙殑 V11 杩愯娴佺▼銆傛墍鏈夊懡浠ら粯璁ゅ湪椤圭洰鏍圭洰褰曟墽琛岋細
 
 ```powershell
-cd "C:\Users\29694\Desktop\我的文件\陆子欣师姐\2025陆子欣\Code-New"
+cd "C:\Users\29694\Desktop\鎴戠殑鏂囦欢\闄嗗瓙娆ｅ笀濮怽2025闄嗗瓙娆Code-New"
 conda activate kg4er_cuda
 ```
 
-V11 的目标是重新闭环生成前置文件，并把结果保存到：
-
+V11 鐨勭洰鏍囨槸閲嶆柊闂幆鐢熸垚鍓嶇疆鏂囦欢锛屽苟鎶婄粨鏋滀繚瀛樺埌锛?
 ```text
 ER/KG4ER-New/data/Eedi/v11/
 ```
 
-原始数据仍从旧目录读取，不移动、不覆盖：
-
+鍘熷鏁版嵁浠嶄粠鏃х洰褰曡鍙栵紝涓嶇Щ鍔ㄣ€佷笉瑕嗙洊锛?
 ```text
 ER/KG4ER/data/Eedi/
 ```
 
-## 1. 生成 MIRT 输入
+## 1. 鐢熸垚 MIRT 杈撳叆
 
 ```powershell
 python ER\KG4ER-New\v11_pipeline\prepare_mirt_inputs_v11.py `
@@ -27,13 +24,9 @@ python ER\KG4ER-New\v11_pipeline\prepare_mirt_inputs_v11.py `
   --force
 ```
 
-作用：
-
-- 使用 ER 图已对齐的 Eedi-sub 学生、题目和作答记录；
-- 生成 no-Q MIRT 训练所需输入；
-- 避免把完整 Eedi 当成 Eedi-sub 使用。
-
-## 2. 训练 no-Q MIRT
+浣滅敤锛?
+- 浣跨敤 ER 鍥惧凡瀵归綈鐨?Eedi-sub 瀛︾敓銆侀鐩拰浣滅瓟璁板綍锛?- 鐢熸垚 no-Q MIRT 璁粌鎵€闇€杈撳叆锛?- 閬垮厤鎶婂畬鏁?Eedi 褰撴垚 Eedi-sub 浣跨敤銆?
+## 2. 璁粌 no-Q MIRT
 
 ```powershell
 python ER\KG4ER-New\v11_pipeline\train_mirt_noq_v11.py `
@@ -45,37 +38,29 @@ python ER\KG4ER-New\v11_pipeline\train_mirt_noq_v11.py `
   --force
 ```
 
-作用：
-
-- 将 MIRT 作为教育学特征估计器；
-- 输出题目难度、区分度和学生能力参数；
-- 后续 EKTM_mirt 和 SemanticConvE 都复用这组教育学参数。
-
-## 3. 训练修正版 pyKT DKT 并导出 stu2know_seq.json
+浣滅敤锛?
+- 灏?MIRT 浣滀负鏁欒偛瀛︾壒寰佷及璁″櫒锛?- 杈撳嚭棰樼洰闅惧害銆佸尯鍒嗗害鍜屽鐢熻兘鍔涘弬鏁帮紱
+- 鍚庣画 EKTM_mirt 鍜?SemanticConvE 閮藉鐢ㄨ繖缁勬暀鑲插鍙傛暟銆?
+## 3. 璁粌淇鐗?pyKT DKT 骞跺鍑?stu2know_seq.json
 
 ```powershell
 python ER\KG4ER-New\v11_pipeline\train_pykt_dkt_v11.py `
   --dataset Eedi `
-  --epochs 50 `
+  --epochs 30 `
   --batch-size 32 `
   --learning-rate 0.001 `
   --device cuda `
   --force
 ```
 
-作用：
-
-- 复制 pyKT DKT 到 V11 工作目录；
-- 只在复制版 pyKT 中修改 DKT loss，使标签改为“下一步知识点出现”；
-- 训练新的 DKT checkpoint；
-- 导出：
-
+浣滅敤锛?
+- 澶嶅埗 pyKT DKT 鍒?V11 宸ヤ綔鐩綍锛?- 鍙湪澶嶅埗鐗?pyKT 涓慨鏀?DKT loss锛屼娇鏍囩鏀逛负鈥滀笅涓€姝ョ煡璇嗙偣鍑虹幇鈥濓紱
+- 璁粌鏂扮殑 DKT checkpoint锛?- 瀵煎嚭锛?
 ```text
 ER/KG4ER-New/data/Eedi/v11/stu2know_seq.json
 ```
 
-如果训练已完成，只想从已有 checkpoint 重新导出：
-
+濡傛灉璁粌宸插畬鎴愶紝鍙兂浠庡凡鏈?checkpoint 閲嶆柊瀵煎嚭锛?
 ```powershell
 python ER\KG4ER-New\v11_pipeline\train_pykt_dkt_v11.py `
   --dataset Eedi `
@@ -83,7 +68,7 @@ python ER\KG4ER-New\v11_pipeline\train_pykt_dkt_v11.py `
   --skip-train
 ```
 
-## 4. 训练 EKTM_mirt
+## 4. 璁粌 EKTM_mirt
 
 ```powershell
 python ER\KG4ER-New\v11_pipeline\train_ektm_mirt_v11.py `
@@ -94,14 +79,9 @@ python ER\KG4ER-New\v11_pipeline\train_ektm_mirt_v11.py `
   --force
 ```
 
-作用：
-
-- 使用学生作答序列、题目文本、知识点映射和 MIRT 参数训练 EKTM_mirt；
-- 保存 best checkpoint；
-- 训练结束后导出 `stu2know_mastery.json`、习题文本 embedding 和知识点文本 embedding。
-
-如果训练已完成，只想使用 best checkpoint 重新导出：
-
+浣滅敤锛?
+- 浣跨敤瀛︾敓浣滅瓟搴忓垪銆侀鐩枃鏈€佺煡璇嗙偣鏄犲皠鍜?MIRT 鍙傛暟璁粌 EKTM_mirt锛?- 淇濆瓨 best checkpoint锛?- 璁粌缁撴潫鍚庡鍑?`stu2know_mastery.json`銆佷範棰樻枃鏈?embedding 鍜岀煡璇嗙偣鏂囨湰 embedding銆?
+濡傛灉璁粌宸插畬鎴愶紝鍙兂浣跨敤 best checkpoint 閲嶆柊瀵煎嚭锛?
 ```powershell
 python ER\KG4ER-New\v11_pipeline\train_ektm_mirt_v11.py `
   --dataset Eedi `
@@ -109,7 +89,7 @@ python ER\KG4ER-New\v11_pipeline\train_ektm_mirt_v11.py `
   --export-only
 ```
 
-## 5. 生成遗忘相关文件
+## 5. 鐢熸垚閬楀繕鐩稿叧鏂囦欢
 
 ```powershell
 python ER\KG4ER-New\v11_pipeline\generate_forgetting_v11.py `
@@ -119,16 +99,14 @@ python ER\KG4ER-New\v11_pipeline\generate_forgetting_v11.py `
   --force
 ```
 
-输出：
-
+杈撳嚭锛?
 ```text
 stu2know_forget.json
 stu2ex_forget.json
 ```
 
-V11 中 `stu2ex_forget.json` 按题目涉及知识点的遗忘率平均值重新计算，避免旧流程中“求和后超过 1”的问题。
-
-## 6. 导出 SemanticConvE 特征文件
+V11 涓?`stu2ex_forget.json` 鎸夐鐩秹鍙婄煡璇嗙偣鐨勯仐蹇樼巼骞冲潎鍊奸噸鏂拌绠楋紝閬垮厤鏃ф祦绋嬩腑鈥滄眰鍜屽悗瓒呰繃 1鈥濈殑闂銆?
+## 6. 瀵煎嚭 SemanticConvE 鐗瑰緛鏂囦欢
 
 ```powershell
 python ER\KG4ER-New\v11_pipeline\export_mirt_features_v11.py `
@@ -136,27 +114,20 @@ python ER\KG4ER-New\v11_pipeline\export_mirt_features_v11.py `
   --force
 ```
 
-作用：
-
-- 汇总学生、题目、知识点、关系所需特征；
-- 使用 EKTM_mirt/Bi-GRU 导出的文本 embedding；
-- 不再使用 BGE/SentenceTransformer；
-- 写入：
-
+浣滅敤锛?
+- 姹囨€诲鐢熴€侀鐩€佺煡璇嗙偣銆佸叧绯绘墍闇€鐗瑰緛锛?- 浣跨敤 EKTM_mirt/Bi-GRU 瀵煎嚭鐨勬枃鏈?embedding锛?- 涓嶅啀浣跨敤 BGE/SentenceTransformer锛?- 鍐欏叆锛?
 ```text
 ER/KG4ER-New/data/Eedi/v11/semantic_kg_features/
 ```
 
-## 7. 构建 V11 ER 图
-
-默认推荐公式使用更直观的 sequence 项：
+## 7. 鏋勫缓 V11 ER 鍥?
+榛樿鎺ㄨ崘鍏紡浣跨敤鏇寸洿瑙傜殑 sequence 椤癸細
 
 ```text
 (1 - cos(Q_j, seq_i))^2
 ```
 
-运行：
-
+杩愯锛?
 ```powershell
 python ER\KG4ER-New\v11_pipeline\build_v11_graph.py `
   --dataset Eedi `
@@ -164,8 +135,7 @@ python ER\KG4ER-New\v11_pipeline\build_v11_graph.py `
   --force
 ```
 
-输出：
-
+杈撳嚭锛?
 ```text
 stu2ex_recommend.json
 stu2ex_recommend_full_precision.json
@@ -175,7 +145,7 @@ entities.dict
 relations.dict
 ```
 
-如需保留旧公式对照：
+濡傞渶淇濈暀鏃у叕寮忓鐓э細
 
 ```powershell
 python ER\KG4ER-New\v11_pipeline\build_v11_graph.py `
@@ -184,49 +154,40 @@ python ER\KG4ER-New\v11_pipeline\build_v11_graph.py `
   --force
 ```
 
-## 8. 校验 V11 前置文件
+## 8. 鏍￠獙 V11 鍓嶇疆鏂囦欢
 
 ```powershell
 python ER\KG4ER-New\v11_pipeline\validate_v11_front_files.py `
   --datasets Eedi
 ```
 
-重点检查：
+閲嶇偣妫€鏌ワ細
 
-- 学生、题目、知识点数量是否与 ER 图一致；
-- `stu2know_mastery.json`、`stu2know_seq.json` 是否维度正确；
-- 遗忘率是否在合理范围；
-- 文本 embedding 是否来自 EKTM_mirt/TopicRNNModel；
-- 是否仍混入 BGE embedding。
-
-## 9. 前置推荐分数预评估
-
+- 瀛︾敓銆侀鐩€佺煡璇嗙偣鏁伴噺鏄惁涓?ER 鍥句竴鑷达紱
+- `stu2know_mastery.json`銆乣stu2know_seq.json` 鏄惁缁村害姝ｇ‘锛?- 閬楀繕鐜囨槸鍚﹀湪鍚堢悊鑼冨洿锛?- 鏂囨湰 embedding 鏄惁鏉ヨ嚜 EKTM_mirt/TopicRNNModel锛?- 鏄惁浠嶆贩鍏?BGE embedding銆?
+## 9. 鍓嶇疆鎺ㄨ崘鍒嗘暟棰勮瘎浼?
 ```powershell
 python ER\KG4ER-New\v11_pipeline\score_v11_front_files.py `
   --dataset Eedi
 ```
 
-作用：
-
-- 直接用 V11 手工推荐距离做一次“前置分数”评估；
-- 距离越小越推荐，脚本会自动转成评估器需要的高分优先格式；
-- 输出：
-
+浣滅敤锛?
+- 鐩存帴鐢?V11 鎵嬪伐鎺ㄨ崘璺濈鍋氫竴娆♀€滃墠缃垎鏁扳€濊瘎浼帮紱
+- 璺濈瓒婂皬瓒婃帹鑽愶紝鑴氭湰浼氳嚜鍔ㄨ浆鎴愯瘎浼板櫒闇€瑕佺殑楂樺垎浼樺厛鏍煎紡锛?- 杈撳嚭锛?
 ```text
 ER/KG4ER-New/data/Eedi/v11/front_oracle_eval/
 ```
 
-这一步用于提前判断前置文件本身是否异常，不等价于 SemanticConvE 最终结果。
+杩欎竴姝ョ敤浜庢彁鍓嶅垽鏂墠缃枃浠舵湰韬槸鍚﹀紓甯革紝涓嶇瓑浠蜂簬 SemanticConvE 鏈€缁堢粨鏋溿€?
+## 10. 璁粌涓庢祴璇?SemanticConvE 涓绘ā鍨嬪拰娑堣瀺瀹為獙
 
-## 10. 训练与测试 SemanticConvE 主模型和消融实验
-
-进入新代码目录：
+杩涘叆鏂颁唬鐮佺洰褰曪細
 
 ```powershell
-cd "C:\Users\29694\Desktop\我的文件\陆子欣师姐\2025陆子欣\Code-New\ER\KG4ER-New"
+cd "C:\Users\29694\Desktop\鎴戠殑鏂囦欢\闄嗗瓙娆ｅ笀濮怽2025闄嗗瓙娆Code-New\ER\KG4ER-New"
 ```
 
-运行 Eedi 五个随机种子的完整实验：
+杩愯 Eedi 浜斾釜闅忔満绉嶅瓙鐨勫畬鏁村疄楠岋細
 
 ```powershell
 python codes-New-ConvE\run_semantic_experiments.py `
@@ -242,8 +203,7 @@ python codes-New-ConvE\run_semantic_experiments.py `
   --cuda auto
 ```
 
-续跑命令：
-
+缁窇鍛戒护锛?
 ```powershell
 python codes-New-ConvE\run_semantic_experiments.py `
   --dataset Eedi `
@@ -259,8 +219,7 @@ python codes-New-ConvE\run_semantic_experiments.py `
   --resume
 ```
 
-如果需要保持旧代码 transductive 设置，即训练时加入 `test_triples.txt`：
-
+濡傛灉闇€瑕佷繚鎸佹棫浠ｇ爜 transductive 璁剧疆锛屽嵆璁粌鏃跺姞鍏?`test_triples.txt`锛?
 ```powershell
 python codes-New-ConvE\run_semantic_experiments.py `
   --dataset Eedi `
@@ -276,9 +235,9 @@ python codes-New-ConvE\run_semantic_experiments.py `
   --include-test-triples
 ```
 
-## 11. 统计实验结果
+## 11. 缁熻瀹為獙缁撴灉
 
-在 `ER/KG4ER-New` 目录下运行：
+鍦?`ER/KG4ER-New` 鐩綍涓嬭繍琛岋細
 
 ```powershell
 python codes-New-ConvE\summarize_semantic_results.py `
@@ -287,8 +246,7 @@ python codes-New-ConvE\summarize_semantic_results.py `
   --seeds 2024,2025,2026,2027,2028
 ```
 
-如果统计 include-test 版本：
-
+濡傛灉缁熻 include-test 鐗堟湰锛?
 ```powershell
 python codes-New-ConvE\summarize_semantic_results.py `
   --dataset Eedi `
@@ -296,31 +254,26 @@ python codes-New-ConvE\summarize_semantic_results.py `
   --seeds 2024,2025,2026,2027,2028
 ```
 
-结果目录：
-
+缁撴灉鐩綍锛?
 ```text
 ER/KG4ER-New/runs/Eedi/<run-id>/summaries/
 ```
 
-## 12. 新电脑运行需要拷贝什么
-
-如果在新电脑只跑 Eedi，拉取 V11 代码后，拷贝这个目录：
-
+## 12. 鏂扮數鑴戣繍琛岄渶瑕佹嫹璐濅粈涔?
+濡傛灉鍦ㄦ柊鐢佃剳鍙窇 Eedi锛屾媺鍙?V11 浠ｇ爜鍚庯紝鎷疯礉杩欎釜鐩綍锛?
 ```text
 ER/KG4ER-New/data/Eedi/v11/
 ```
 
-放到新电脑仓库中：
-
+鏀惧埌鏂扮數鑴戜粨搴撲腑锛?
 ```text
 KG4ER-New/data/Eedi/v11/
 ```
 
-然后进入：
-
+鐒跺悗杩涘叆锛?
 ```powershell
 cd KG4ER-New
 ```
 
-即可运行第 10 节和第 11 节命令。
+鍗冲彲杩愯绗?10 鑺傚拰绗?11 鑺傚懡浠ゃ€?
 
