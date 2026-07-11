@@ -14,6 +14,7 @@ import torch
 from common import (
     copy_file,
     ensure_large_csv_field_limit,
+    locate_sequence_interactions,
     output_data_root,
     project_root,
     read_q_matrix,
@@ -25,6 +26,7 @@ from common import (
 
 
 FIELDNAMES = ["fold", "uid", "questions", "concepts", "responses", "selectmasks", "orig_len"]
+STANDARD_SEQUENCE_FIELDS = ["fold", "uid", "questions", "concepts", "responses", "selectmasks", "orig_len"]
 
 
 def parse_args() -> argparse.Namespace:
@@ -114,6 +116,165 @@ def make_full_row(row: dict[str, str], expanded: list[dict[str, int]]) -> dict[s
         "selectmasks": ",".join(str(x["selectmask"]) for x in expanded),
         "orig_len": len(expanded),
     }
+
+
+def is_missing_text(value: object) -> bool:
+    if value is None:
+        return True
+    text = str(value).strip()
+    return text == "" or text.lower() in {"nan", "none", "null", "-1"}
+
+
+def q_concept_lookup(q_path: Path) -> dict[int, str]:
+    q = read_q_matrix(q_path)
+    lookup: dict[int, str] = {}
+    for qid in range(q.shape[0]):
+        concepts = [str(idx) for idx, value in enumerate(q[qid].tolist()) if int(value) > 0]
+        if concepts:
+            lookup[qid] = "_".join(concepts)
+    return lookup
+
+
+def sort_timestamp(value: object) -> tuple[int, float | str]:
+    if value is None:
+        return (1, "")
+    text = str(value).strip()
+    if text == "":
+        return (1, "")
+    try:
+        return (0, float(text))
+    except ValueError:
+        return (1, text)
+
+
+def make_sequence_row(uid: str, fold: int, records: list[dict[str, Any]]) -> dict[str, Any]:
+    ordered = sorted(records, key=lambda item: (item["sort_key"], item["order"]))
+    return {
+        "fold": fold,
+        "uid": uid,
+        "questions": ",".join(str(item["question"]) for item in ordered),
+        "concepts": ",".join(str(item["concepts"]) for item in ordered),
+        "responses": ",".join(str(item["response"]) for item in ordered),
+        "selectmasks": ",".join("1" for _ in ordered),
+        "orig_len": len(ordered),
+    }
+
+
+def write_standard_sequences(path: Path, rows: list[dict[str, Any]]) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with path.open("w", encoding="utf-8", newline="") as fp:
+        writer = csv.DictWriter(fp, fieldnames=STANDARD_SEQUENCE_FIELDS)
+        writer.writeheader()
+        writer.writerows(rows)
+
+
+def prepare_eedi_sequence_interactions_as_standard_files(
+    source_dir: Path,
+    output_dir: Path,
+    learner_count: int,
+    force: bool,
+) -> tuple[Path, dict[str, Any]]:
+    """Convert Eedi sequence_interactions.csv into train/test sequence files.
+
+    The source Eedi directory does not contain train_sequences.csv/test_sequences.csv.
+    Its sequence_interactions.csv already stores source_split=train_valid/test, and
+    the test split uses ER learner ids 0..934. We keep that order so row i maps to
+    uid{i} in the ER graph.
+    """
+
+    if output_dir.exists() and any(output_dir.iterdir()) and not force:
+        manifest_path = output_dir / "eedi_standard_sequence_manifest.json"
+        if manifest_path.exists():
+            return output_dir, json.loads(manifest_path.read_text(encoding="utf-8"))
+        raise FileExistsError(f"{output_dir} already exists. Use --force to overwrite.")
+    if output_dir.exists() and force:
+        shutil.rmtree(output_dir)
+    output_dir.mkdir(parents=True, exist_ok=True)
+
+    q_path = source_dir / "Q.txt"
+    if not q_path.exists():
+        raise FileNotFoundError(f"missing Eedi Q matrix: {q_path}")
+    concept_lookup = q_concept_lookup(q_path)
+    seq_path = locate_sequence_interactions(source_dir)
+    ensure_large_csv_field_limit()
+
+    train_groups: dict[str, list[dict[str, Any]]] = {}
+    test_groups: dict[int, list[dict[str, Any]]] = {idx: [] for idx in range(learner_count)}
+    skipped = {"bad_question": 0, "missing_concept": 0, "bad_response": 0, "outside_test_uid": 0}
+    row_count = 0
+    with seq_path.open("r", encoding="utf-8", newline="") as fp:
+        for order, row in enumerate(csv.DictReader(fp)):
+            row_count += 1
+            try:
+                question = int(float(str(row.get("question", "")).strip()))
+            except ValueError:
+                skipped["bad_question"] += 1
+                continue
+            try:
+                response = int(float(str(row.get("response", "")).strip()))
+            except ValueError:
+                skipped["bad_response"] += 1
+                continue
+            concepts = row.get("concepts", "")
+            if is_missing_text(concepts):
+                concepts = concept_lookup.get(question, "")
+            if is_missing_text(concepts):
+                skipped["missing_concept"] += 1
+                continue
+            record = {
+                "question": question,
+                "concepts": str(concepts),
+                "response": 1 if response > 0 else 0,
+                "sort_key": sort_timestamp(row.get("timestamp", "")),
+                "order": order,
+            }
+            split = str(row.get("source_split", "")).strip().lower()
+            uid = str(row.get("uid", "")).strip()
+            if split == "test":
+                try:
+                    uid_index = int(float(uid))
+                except ValueError:
+                    skipped["outside_test_uid"] += 1
+                    continue
+                if 0 <= uid_index < learner_count:
+                    test_groups[uid_index].append(record)
+                else:
+                    skipped["outside_test_uid"] += 1
+            else:
+                train_groups.setdefault(uid, []).append(record)
+
+    train_rows = [
+        make_sequence_row(uid, idx % 5, records)
+        for idx, (uid, records) in enumerate(sorted(train_groups.items(), key=lambda kv: kv[0]))
+        if records
+    ]
+    missing_test_uids = [idx for idx, records in test_groups.items() if not records]
+    if missing_test_uids:
+        raise ValueError(
+            "Eedi sequence_interactions.csv does not contain test records for "
+            f"{len(missing_test_uids)} ER learners. Examples: {missing_test_uids[:20]}"
+        )
+    test_rows = [make_sequence_row(str(idx), -1, test_groups[idx]) for idx in range(learner_count)]
+
+    write_standard_sequences(output_dir / "train_sequences.csv", train_rows)
+    write_standard_sequences(output_dir / "test_sequences.csv", test_rows)
+    copy_file(q_path, output_dir / "Q.txt")
+
+    manifest = {
+        "dataset": "Eedi",
+        "source_sequence_interactions": seq_path,
+        "output_dir": output_dir,
+        "row_count": row_count,
+        "train_students": len(train_rows),
+        "test_students": len(test_rows),
+        "train_interactions": sum(int(row["orig_len"]) for row in train_rows),
+        "test_interactions": sum(int(row["orig_len"]) for row in test_rows),
+        "learner_alignment": "test_sequences row i maps to ER learner uidi",
+        "concept_source": "use sequence_interactions.concepts when present; otherwise fill from Q.txt",
+        "skipped": skipped,
+    }
+    write_json(output_dir / "eedi_standard_sequence_manifest.json", manifest)
+    return output_dir, manifest
 
 
 def convert_sequence_file(input_path: Path, chunked_path: Path, full_path: Path, maxlen: int, fold_count: int, is_test: bool) -> dict[str, Any]:
@@ -327,6 +488,23 @@ def main() -> None:
     work_root = v11_dir / "pykt_dkt" / "work"
     checkpoint_manifest = v11_dir / "pykt_dkt" / "checkpoint_manifest.json"
 
+    if args.dataset == "Eedi" and not (source_graph_dir / "train_sequences.csv").exists():
+        mirt_manifest_path = v11_dir / "mirt" / "inputs" / "mirt_input_manifest.json"
+        if not mirt_manifest_path.exists():
+            raise FileNotFoundError(
+                f"missing {mirt_manifest_path}. Run prepare_mirt_inputs_v11.py before train_pykt_dkt_v11.py."
+            )
+        mirt_manifest = json.loads(mirt_manifest_path.read_text(encoding="utf-8"))
+        learner_count = int(mirt_manifest["user_num"])
+        source_graph_dir, eedi_sequence_manifest = prepare_eedi_sequence_interactions_as_standard_files(
+            source_dir,
+            v11_dir / "pykt_dkt" / "source_sequences",
+            learner_count,
+            args.force,
+        )
+    else:
+        eedi_sequence_manifest = None
+
     manifest = prepare_dkt_sequences(source_graph_dir, dkt_dir, args.maxlen, args.fold_count, args.force)
     pykt_copy = copy_pykt(args.pykt_root, work_root, args.force)
     patch_report = patch_pykt_for_pkc(pykt_copy)
@@ -365,6 +543,7 @@ def main() -> None:
                 "params": params,
                 "patch_report": patch_report,
                 "register_report": register_report,
+                "eedi_sequence_manifest": eedi_sequence_manifest,
             },
         )
 
