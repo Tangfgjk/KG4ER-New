@@ -103,6 +103,25 @@ class SemanticConvEV10AttentionTest(unittest.TestCase):
         self.assertTrue(torch.allclose(embeddings_a[0], embeddings_b[0], atol=1e-6))
         self.assertFalse(torch.allclose(embeddings_a[1], embeddings_b[1], atol=1e-6))
 
+    def test_compact_features_masks_concept_text_and_cluster(self) -> None:
+        model_a = self.build_model()
+        model_b = self.build_model()
+        model_a.ablation_mode = "compact_features"
+        model_b.ablation_mode = "compact_features"
+        model_a.eval()
+        model_b.eval()
+        with torch.no_grad():
+            model_b.text_features[1, 0] = 1.0
+            model_b.text_features[2, 0] = 1.0
+            model_b.cluster_ids[0] = 1
+
+        embeddings_a = model_a.entity_embedding(torch.tensor([0, 1, 2], dtype=torch.long))
+        embeddings_b = model_b.entity_embedding(torch.tensor([0, 1, 2], dtype=torch.long))
+
+        self.assertTrue(torch.allclose(embeddings_a[0], embeddings_b[0], atol=1e-6))
+        self.assertTrue(torch.allclose(embeddings_a[1], embeddings_b[1], atol=1e-6))
+        self.assertFalse(torch.allclose(embeddings_a[2], embeddings_b[2], atol=1e-6))
+
     def test_gate_values_report_id_token_attention_fusion(self) -> None:
         model = self.build_model()
 

@@ -44,6 +44,7 @@ VALID_MODEL_ABLATIONS = {
     "discrete_relation",
     "hybrid_relation",
     "relation_id_only",
+    "compact_features",
     "id_only",
 }
 
@@ -236,7 +237,7 @@ class SemanticConvE(nn.Module):
         ) & (self.semantic_quality[entity_ids, 0] > 0)
         if self.ablation_mode in {"id_only", "no_content_entity", "no_semantic", "no_text_semantic"}:
             active = torch.zeros_like(active)
-        elif self.ablation_mode == "no_concept_semantic":
+        elif self.ablation_mode in {"no_concept_semantic", "compact_features"}:
             active = active & (type_ids != ENTITY_TYPE_TO_ID["kc"])
         elif self.ablation_mode == "no_exercise_semantic":
             active = active & (type_ids != ENTITY_TYPE_TO_ID["ex"])
@@ -270,7 +271,7 @@ class SemanticConvE(nn.Module):
 
     def _cluster_active(self, type_ids: torch.Tensor) -> torch.Tensor:
         active = type_ids == ENTITY_TYPE_TO_ID["uid"]
-        if self.ablation_mode in {"id_only", "no_content_entity", "no_pedagogical", "no_cluster"}:
+        if self.ablation_mode in {"id_only", "no_content_entity", "no_pedagogical", "no_cluster", "compact_features"}:
             active = torch.zeros_like(active)
         return active
 
