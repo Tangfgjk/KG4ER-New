@@ -50,7 +50,13 @@ def count_q_rows(path: Path) -> int:
         return sum(1 for line in fp if line.strip())
 
 
-def validate_dataset(dataset: str, data_root: Path, allow_template: bool = False, graph_subdir: str | None = None) -> Dict[str, Any]:
+def validate_dataset(
+    dataset: str,
+    data_root: Path,
+    allow_template: bool = False,
+    graph_subdir: str | None = None,
+    allow_legacy_text_embeddings: bool = False,
+) -> Dict[str, Any]:
     graph_path = graph_path_for_dataset(dataset, data_root, graph_subdir=graph_subdir)
     feature_dir = graph_path / "semantic_kg_features"
     errors: List[str] = []
@@ -109,9 +115,12 @@ def validate_dataset(dataset: str, data_root: Path, allow_template: bool = False
             or manifest.get("source")
             or ""
         ).lower()
-        if "bge" in model_name or "sentence" in model_name:
+        is_legacy_text_embedding = "bge" in model_name or "sentence" in model_name
+        if is_legacy_text_embedding and not allow_legacy_text_embeddings:
             errors.append("legacy BGE/SentenceTransformer text embeddings are not allowed in V10")
-        if "ektm" not in model_name and "topic" not in model_name:
+        if is_legacy_text_embedding and allow_legacy_text_embeddings:
+            warnings.append("legacy BGE/SentenceTransformer text embeddings allowed for diagnostic compatibility run")
+        if "ektm" not in model_name and "topic" not in model_name and not allow_legacy_text_embeddings:
             errors.append("text embedding manifest must identify EKTM_mirt TopicRNNModel topic_v source")
     if (feature_dir / "text_embeddings" / "concept_text_embeddings.npy").exists():
         concept_embeddings = np.load(feature_dir / "text_embeddings" / "concept_text_embeddings.npy", mmap_mode="r")
@@ -161,6 +170,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--data-root", type=Path, default=default_data_root())
     parser.add_argument("--datasets", default=",".join(DEFAULT_DATASETS))
     parser.add_argument("--allow-template", action="store_true")
+    parser.add_argument("--allow-legacy-text-embeddings", action="store_true")
     parser.add_argument("--graph-subdir", default=None)
     parser.add_argument("--output-file", type=Path, default=None)
     return parser.parse_args()
@@ -169,7 +179,13 @@ def parse_args() -> argparse.Namespace:
 def main() -> None:
     args = parse_args()
     reports = [
-        validate_dataset(dataset, args.data_root, allow_template=args.allow_template, graph_subdir=args.graph_subdir)
+        validate_dataset(
+            dataset,
+            args.data_root,
+            allow_template=args.allow_template,
+            graph_subdir=args.graph_subdir,
+            allow_legacy_text_embeddings=args.allow_legacy_text_embeddings,
+        )
         for dataset in parse_csv_list(args.datasets)
     ]
     summary = {

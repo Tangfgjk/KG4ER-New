@@ -162,6 +162,11 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--feat-drop", "--feat_drop", dest="feat_drop", type=float, default=0.3)
     parser.add_argument("--forgetting-score-weight", type=float, default=0.0)
     parser.add_argument("--forgetting-exercise-batch-size", type=int, default=256)
+    parser.add_argument(
+        "--allow-legacy-text-embeddings",
+        action="store_true",
+        help="Compatibility mode for diagnostic runs on er_v8 BGE/SentenceTransformer text embeddings.",
+    )
     return parser.parse_args()
 
 
@@ -172,7 +177,12 @@ def main() -> None:
     if args.forgetting_exercise_batch_size <= 0:
         raise ValueError("--forgetting-exercise-batch-size must be positive")
     device = resolve_device(str(args.cuda))
-    bundle = load_semantic_feature_bundle(args.data_path, args.feature_dir, device=device)
+    bundle = load_semantic_feature_bundle(
+        args.data_path,
+        args.feature_dir,
+        device=device,
+        allow_legacy_text_embeddings=args.allow_legacy_text_embeddings,
+    )
     model = SemanticConvE.from_feature_bundle(
         bundle,
         embedding_dim=args.embedding_dim,

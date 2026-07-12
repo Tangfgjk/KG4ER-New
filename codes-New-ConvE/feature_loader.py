@@ -182,7 +182,10 @@ def _log_count(value: Any) -> float:
     return _clamp01(math.log1p(max(0.0, _as_float(value, 0.0))) / 10.0)
 
 
-def _load_text_embeddings(feature_dir: Path) -> tuple[Dict[str, np.ndarray], int, Dict[str, Any]]:
+def _load_text_embeddings(
+    feature_dir: Path,
+    allow_legacy_text_embeddings: bool = False,
+) -> tuple[Dict[str, np.ndarray], int, Dict[str, Any]]:
     emb_dir = feature_dir / "text_embeddings"
     manifest_path = emb_dir / "text_embedding_manifest.json"
     if not manifest_path.exists():
@@ -197,16 +200,18 @@ def _load_text_embeddings(feature_dir: Path) -> tuple[Dict[str, np.ndarray], int
         or manifest.get("source")
         or ""
     ).lower()
-    if "bge" in model_name or "sentence" in model_name:
+    is_legacy_text_embedding = "bge" in model_name or "sentence" in model_name
+    if is_legacy_text_embedding and not allow_legacy_text_embeddings:
         raise ValueError(
             f"Legacy BGE/SentenceTransformer text embeddings are not allowed: {manifest_path}. "
             "Use EKTM_mirt TopicRNNModel topic_v embeddings for V10."
         )
-    if "ektm" not in model_name and "topic" not in model_name:
+    if "ektm" not in model_name and "topic" not in model_name and not allow_legacy_text_embeddings:
         raise ValueError(
             f"Text embedding manifest must identify EKTM_mirt topic_v source: {manifest_path}. "
             "Expected model/source to contain EKTM or topic."
         )
+    manifest["legacy_text_embeddings_allowed"] = bool(is_legacy_text_embedding and allow_legacy_text_embeddings)
     concept_embeddings = np.load(emb_dir / manifest["files"]["concept_text_embeddings"])
     exercise_embeddings = np.load(emb_dir / manifest["files"]["exercise_text_embeddings"])
     text_by_entity: Dict[str, np.ndarray] = {}
@@ -344,6 +349,7 @@ def load_semantic_feature_bundle(
     data_path: str | Path,
     feature_dir: str | Path | None = None,
     device: str | torch.device = "cpu",
+    allow_legacy_text_embeddings: bool = False,
 ) -> SemanticFeatureBundle:
     data_path = Path(data_path)
     feature_dir_path = locate_feature_dir(data_path, Path(feature_dir) if feature_dir else None)
@@ -352,7 +358,10 @@ def load_semantic_feature_bundle(
     id2entity = {idx: name for name, idx in entity2id.items()}
     id2relation = {idx: name for name, idx in relation2id.items()}
 
-    text_by_entity, text_dim, text_manifest = _load_text_embeddings(feature_dir_path)
+    text_by_entity, text_dim, text_manifest = _load_text_embeddings(
+        feature_dir_path,
+        allow_legacy_text_embeddings=allow_legacy_text_embeddings,
+    )
     semantic_metadata = _load_semantic_metadata(feature_dir_path)
     entity_dir = feature_dir_path / "entity_features"
     irt_dir = feature_dir_path / "irt_features"

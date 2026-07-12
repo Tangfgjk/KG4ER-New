@@ -228,6 +228,11 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--resume", action="store_true")
     parser.add_argument("--include-test-triples", "--include_test_triples", dest="include_test_triples", action="store_true", default=False)
     parser.add_argument("--exclude-test-triples", "--exclude_test_triples", dest="include_test_triples", action="store_false")
+    parser.add_argument(
+        "--allow-legacy-text-embeddings",
+        action="store_true",
+        help="Compatibility mode for diagnostic runs on er_v8 BGE/SentenceTransformer text embeddings.",
+    )
     parser.add_argument("--use-bias", "--use_bias", dest="use_bias", action="store_true", default=True)
     return parser.parse_args()
 
@@ -241,7 +246,12 @@ def main() -> None:
     logging.info("dataset=%s", args.dataset_name)
     logging.info("device=%s", device)
 
-    bundle = load_semantic_feature_bundle(args.data_path, args.feature_dir, device=device)
+    bundle = load_semantic_feature_bundle(
+        args.data_path,
+        args.feature_dir,
+        device=device,
+        allow_legacy_text_embeddings=args.allow_legacy_text_embeddings,
+    )
     train_files = training_triple_files(args.include_test_triples)
     all_positive: List[Triple] = []
     file_triples: List[tuple[str, List[Triple]]] = []

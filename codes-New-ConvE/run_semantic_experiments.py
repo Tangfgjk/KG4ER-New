@@ -97,11 +97,13 @@ def command_train(
         command.append("--exclude-test-triples")
     if resume_train:
         command.append("--resume")
+    if args.allow_legacy_text_embeddings:
+        command.append("--allow-legacy-text-embeddings")
     return command
 
 
 def command_test(args: argparse.Namespace, eval_graph_path: Path, seed_dir: Path, ablation: str) -> List[str]:
-    return [
+    command = [
         sys.executable,
         str(code_dir() / "test_semantic_conve.py"),
         "--data-path",
@@ -119,6 +121,9 @@ def command_test(args: argparse.Namespace, eval_graph_path: Path, seed_dir: Path
         "--forgetting-exercise-batch-size",
         str(args.forgetting_exercise_batch_size),
     ]
+    if args.allow_legacy_text_embeddings:
+        command.append("--allow-legacy-text-embeddings")
+    return command
 
 
 def command_eval(args: argparse.Namespace, eval_graph_path: Path, seed_dir: Path, seed: int, ablation: str) -> List[str]:
@@ -271,6 +276,11 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--top-ks", default=",".join(str(k) for k in DEFAULT_TOP_KS))
     parser.add_argument("--ep-top-k", type=int, default=10)
     parser.add_argument("--skip-validation", action="store_true")
+    parser.add_argument(
+        "--allow-legacy-text-embeddings",
+        action="store_true",
+        help="Compatibility mode for diagnostic runs on er_v8 BGE/SentenceTransformer text embeddings.",
+    )
     parser.add_argument("--include-test-triples", dest="include_test_triples", action="store_true", default=False)
     parser.add_argument("--exclude-test-triples", dest="include_test_triples", action="store_false")
     return parser.parse_args()
@@ -294,7 +304,12 @@ def main() -> None:
 
     validation = None
     if not args.skip_validation:
-        validation = validate_dataset(args.dataset, args.data_root, graph_subdir=args.graph_subdir)
+        validation = validate_dataset(
+            args.dataset,
+            args.data_root,
+            graph_subdir=args.graph_subdir,
+            allow_legacy_text_embeddings=args.allow_legacy_text_embeddings,
+        )
         write_json(run_dir / "semantic_ready_validation.json", validation)
         if validation["status"] != "passed":
             raise RuntimeError(f"Dataset validation failed: {validation['errors']}")
@@ -325,6 +340,7 @@ def main() -> None:
             "forgetting_score_weight": args.forgetting_score_weight,
             "forgetting_exercise_batch_size": args.forgetting_exercise_batch_size,
             "include_test_triples": args.include_test_triples,
+            "allow_legacy_text_embeddings": args.allow_legacy_text_embeddings,
             "train_eval_split": "train uses train graph only; test_triples are evaluation-only unless --include-test-triples is set",
             "model_version": MODEL_VERSION,
             "env": python_env_info(),
