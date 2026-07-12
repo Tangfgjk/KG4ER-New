@@ -1,4 +1,4 @@
-"""Unit checks for ID-token attention SemanticConvE representations."""
+"""Unit checks for ID-token concat-MLP SemanticConvE representations."""
 
 from __future__ import annotations
 
@@ -93,6 +93,8 @@ class SemanticConvEV10AttentionTest(unittest.TestCase):
         model_b = self.build_model()
         model_a.ablation_mode = "no_concept_semantic"
         model_b.ablation_mode = "no_concept_semantic"
+        model_a.eval()
+        model_b.eval()
         with torch.no_grad():
             model_b.text_features[1, 0] = 1.0
             model_b.text_features[2, 0] = 1.0
@@ -103,12 +105,12 @@ class SemanticConvEV10AttentionTest(unittest.TestCase):
         self.assertTrue(torch.allclose(embeddings_a[0], embeddings_b[0], atol=1e-6))
         self.assertFalse(torch.allclose(embeddings_a[1], embeddings_b[1], atol=1e-6))
 
-    def test_gate_values_report_id_token_attention_fusion(self) -> None:
+    def test_gate_values_report_id_token_concat_mlp_fusion(self) -> None:
         model = self.build_model()
 
         values = model.gate_values()
 
-        self.assertEqual(values["fusion"], "ID token + feature-token self-attention + MLP compression")
+        self.assertEqual(values["fusion"], "ID token + active feature-token concatenation + MLP compression")
         self.assertIn("entity_id", values["entity_features"]["uid"])
         self.assertIn("relation_id", values["relation_features"])
 

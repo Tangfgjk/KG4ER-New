@@ -1,9 +1,9 @@
 """Semantic and pedagogical feature-aware ConvE model.
 
-V11.1 treats the ID embedding as an explicit attention token together with
-semantic and pedagogical feature tokens. The attended feature set is compressed
-back to the ConvE embedding dimension, so the model can learn whether ID,
-semantic content, or educational attributes should dominate each representation.
+V11.2 treats the ID embedding as an explicit feature token together with
+semantic and pedagogical tokens. The active tokens are concatenated after
+masking inactive sources and compressed by an MLP back to the ConvE embedding
+dimension.
 """
 
 from __future__ import annotations
@@ -57,28 +57,25 @@ def _numeric_projector(input_dim: int, embedding_dim: int) -> nn.Module:
     )
 
 
-class FeatureAttentionFusion(nn.Module):
-    """Fuse a variable set of projected feature tokens.
+class FeatureConcatFusion(nn.Module):
+    """Fuse a fixed set of projected feature tokens with concat + MLP.
 
     Each feature source is first projected into the ConvE embedding dimension.
-    We then run a small self-attention block over the active tokens and mean-pool
-    the attended tokens. Rows without any active token return zeros.
+    Inactive tokens are zeroed by the active mask, all token slots are
+    concatenated, and an MLP compresses the concatenated representation back to
+    the ConvE embedding dimension.
     """
 
-    def __init__(self, embedding_dim: int, num_heads: int = 4, dropout: float = 0.1) -> None:
+    def __init__(self, embedding_dim: int, token_count: int, dropout: float = 0.1) -> None:
         super().__init__()
-        heads = num_heads if embedding_dim % num_heads == 0 else 1
+        self.token_count = token_count
         self.token_norm = nn.LayerNorm(embedding_dim)
-        self.attn = nn.MultiheadAttention(
-            embed_dim=embedding_dim,
-            num_heads=heads,
-            dropout=dropout,
-            batch_first=True,
-        )
+        hidden_dim = embedding_dim * 2
         self.output = nn.Sequential(
-            nn.Linear(embedding_dim, embedding_dim),
+            nn.Linear(embedding_dim * token_count, hidden_dim),
             nn.ReLU(),
-            nn.Linear(embedding_dim, embedding_dim),
+            nn.Dropout(dropout),
+            nn.Linear(hidden_dim, embedding_dim),
         )
         self.output_norm = nn.LayerNorm(embedding_dim)
 
@@ -87,28 +84,16 @@ class FeatureAttentionFusion(nn.Module):
             raise ValueError("tokens must be shaped [batch, feature_count, embedding_dim]")
         if active_mask.dim() != 2:
             raise ValueError("active_mask must be shaped [batch, feature_count]")
-        active = active_mask.bool()
-        output = torch.zeros(tokens.shape[0], tokens.shape[2], dtype=tokens.dtype, device=tokens.device)
-        valid_rows = active.any(dim=1)
-        if not valid_rows.any():
-            return output
-        valid_tokens = self.token_norm(tokens[valid_rows])
-        valid_mask = active[valid_rows]
-        attended, _ = self.attn(
-            valid_tokens,
-            valid_tokens,
-            valid_tokens,
-            key_padding_mask=~valid_mask,
-            need_weights=False,
-        )
-        weights = valid_mask.to(tokens.dtype).unsqueeze(-1)
-        pooled = (attended * weights).sum(dim=1) / weights.sum(dim=1).clamp_min(1.0)
-        output[valid_rows] = self.output_norm(self.output(pooled))
-        return output
+        if tokens.shape[1] != self.token_count:
+            raise ValueError(f"expected {self.token_count} feature tokens, got {tokens.shape[1]}")
+        normalized = self.token_norm(tokens)
+        masked = normalized * active_mask.to(tokens.dtype).unsqueeze(-1)
+        flattened = masked.reshape(tokens.shape[0], self.token_count * tokens.shape[2])
+        return self.output_norm(self.output(flattened))
 
 
 class SemanticConvE(nn.Module):
-    """ConvE with ID-token attention-based multi-source feature fusion."""
+    """ConvE with ID-token concat-MLP multi-source feature fusion."""
 
     def __init__(
         self,
@@ -167,8 +152,8 @@ class SemanticConvE(nn.Module):
         self.learner_irt_projector = _numeric_projector(learner_irt_width, embedding_dim)
         self.exercise_irt_projector = _numeric_projector(exercise_irt_width, embedding_dim)
         self.relation_strength_projector = _numeric_projector(1, embedding_dim)
-        self.entity_fusion = FeatureAttentionFusion(embedding_dim)
-        self.relation_fusion = FeatureAttentionFusion(embedding_dim)
+        self.entity_fusion = FeatureConcatFusion(embedding_dim, token_count=5)
+        self.relation_fusion = FeatureConcatFusion(embedding_dim, token_count=3)
         self.entity_norm = nn.LayerNorm(embedding_dim)
         self.relation_norm = nn.LayerNorm(embedding_dim)
 
@@ -310,7 +295,7 @@ class SemanticConvE(nn.Module):
 
     def gate_values(self) -> dict[str, object]:
         return {
-            "fusion": "ID token + feature-token self-attention + MLP compression",
+            "fusion": "ID token + active feature-token concatenation + MLP compression",
             "entity_features": {
                 "uid": ["entity_id", "theta_mirt_norm", "cluster_id"],
                 "ex": ["entity_id", "topic_v/text", "difficulty_mirt_norm", "discrimination_mirt_norm"],
