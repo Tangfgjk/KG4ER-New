@@ -91,6 +91,7 @@ class SemanticExperimentUtilsTest(unittest.TestCase):
             [
                 "full",
                 "id_only",
+                "compact_features",
                 "no_pedagogical",
                 "no_text_semantic",
                 "no_concept_semantic",
