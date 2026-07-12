@@ -1,15 +1,13 @@
 """Semantic and pedagogical feature-aware ConvE model.
 
-V10-attn keeps the original ConvE ID embeddings as the representation anchor.
-Side information is treated as feature tokens, fused by self-attention, and
-added back as a residual supplement. This keeps the model close to the original
-ConvE while allowing semantic and pedagogical information to be used when it is
-helpful.
+V11.1 treats the ID embedding as an explicit attention token together with
+semantic and pedagogical feature tokens. The attended feature set is compressed
+back to the ConvE embedding dimension, so the model can learn whether ID,
+semantic content, or educational attributes should dominate each representation.
 """
 
 from __future__ import annotations
 
-import math
 from typing import Optional
 
 import torch
@@ -49,14 +47,6 @@ VALID_MODEL_ABLATIONS = {
     "id_only",
 }
 
-RESIDUAL_INITIAL_VALUE = 0.05
-
-
-def _logit(value: float = RESIDUAL_INITIAL_VALUE) -> float:
-    value = min(max(value, 1e-6), 1.0 - 1e-6)
-    return math.log(value / (1.0 - value))
-
-
 def _numeric_projector(input_dim: int, embedding_dim: int) -> nn.Module:
     width = max(1, int(input_dim))
     return nn.Sequential(
@@ -72,7 +62,7 @@ class FeatureAttentionFusion(nn.Module):
 
     Each feature source is first projected into the ConvE embedding dimension.
     We then run a small self-attention block over the active tokens and mean-pool
-    the attended tokens. Rows without any active side feature return zeros.
+    the attended tokens. Rows without any active token return zeros.
     """
 
     def __init__(self, embedding_dim: int, num_heads: int = 4, dropout: float = 0.1) -> None:
@@ -118,7 +108,7 @@ class FeatureAttentionFusion(nn.Module):
 
 
 class SemanticConvE(nn.Module):
-    """ConvE with V10 attention-based side-feature fusion."""
+    """ConvE with ID-token attention-based multi-source feature fusion."""
 
     def __init__(
         self,
@@ -181,8 +171,6 @@ class SemanticConvE(nn.Module):
         self.relation_fusion = FeatureAttentionFusion(embedding_dim)
         self.entity_norm = nn.LayerNorm(embedding_dim)
         self.relation_norm = nn.LayerNorm(embedding_dim)
-        self.raw_entity_residual_scale = nn.Parameter(torch.tensor(_logit(), dtype=torch.float32))
-        self.raw_relation_residual_scale = nn.Parameter(torch.tensor(_logit(), dtype=torch.float32))
 
         self.inp_drop = nn.Dropout(input_drop)
         self.hidden_drop = nn.Dropout(hidden_drop)
@@ -292,8 +280,8 @@ class SemanticConvE(nn.Module):
             return self.entity_norm(id_emb)
 
         type_ids = self.entity_type_ids[entity_ids]
-        token_list: list[torch.Tensor] = []
-        mask_list: list[torch.Tensor] = []
+        token_list: list[torch.Tensor] = [id_emb]
+        mask_list: list[torch.Tensor] = [torch.ones_like(entity_ids, dtype=torch.bool)]
 
         text_features = self.text_features[entity_ids]
         if self.freeze_text_features:
@@ -317,19 +305,16 @@ class SemanticConvE(nn.Module):
 
         tokens = torch.stack(token_list, dim=1)
         active_mask = torch.stack(mask_list, dim=1)
-        side_emb = self.entity_fusion(tokens, active_mask)
-        scale = torch.sigmoid(self.raw_entity_residual_scale)
-        return self.entity_norm(id_emb + scale * side_emb)
+        fused_emb = self.entity_fusion(tokens, active_mask)
+        return self.entity_norm(fused_emb)
 
     def gate_values(self) -> dict[str, object]:
         return {
-            "fusion": "feature-token self-attention + residual addition to ID embedding",
-            "entity_residual_scale": float(torch.sigmoid(self.raw_entity_residual_scale).detach().cpu().item()),
-            "relation_residual_scale": float(torch.sigmoid(self.raw_relation_residual_scale).detach().cpu().item()),
+            "fusion": "ID token + feature-token self-attention + MLP compression",
             "entity_features": {
-                "uid": ["theta_mirt_norm", "cluster_id"],
-                "ex": ["topic_v/text", "difficulty_mirt_norm", "discrimination_mirt_norm"],
-                "kc": ["concept_semantic"],
+                "uid": ["entity_id", "theta_mirt_norm", "cluster_id"],
+                "ex": ["entity_id", "topic_v/text", "difficulty_mirt_norm", "discrimination_mirt_norm"],
+                "kc": ["entity_id", "concept_semantic"],
             },
             "relation_features": ["relation_id", "relation_type", "relation_strength"],
             "ablation": self.ablation_mode,
@@ -346,11 +331,11 @@ class SemanticConvE(nn.Module):
         strength_active = torch.ones_like(relation_ids, dtype=torch.bool)
         if self.ablation_mode == "no_relation_strength":
             strength_active = torch.zeros_like(strength_active)
-        tokens = torch.stack([type_token, strength_token], dim=1)
-        active_mask = torch.stack([type_active, strength_active], dim=1)
-        relation_side_emb = self.relation_fusion(tokens, active_mask)
-        scale = torch.sigmoid(self.raw_relation_residual_scale)
-        return self.relation_norm(id_emb + scale * relation_side_emb)
+        id_active = torch.ones_like(relation_ids, dtype=torch.bool)
+        tokens = torch.stack([id_emb, type_token, strength_token], dim=1)
+        active_mask = torch.stack([id_active, type_active, strength_active], dim=1)
+        relation_emb = self.relation_fusion(tokens, active_mask)
+        return self.relation_norm(relation_emb)
 
     def conve_transform(self, h_emb: torch.Tensor, r_emb: torch.Tensor) -> torch.Tensor:
         h_2d = h_emb.view(-1, 1, self.emb_dim1, self.emb_dim2)

@@ -1,4 +1,4 @@
-"""Unit checks for V10-attn SemanticConvE representations."""
+"""Unit checks for ID-token attention SemanticConvE representations."""
 
 from __future__ import annotations
 
@@ -60,7 +60,7 @@ class SemanticConvEV10AttentionTest(unittest.TestCase):
 
         self.assertFalse(
             torch.allclose(relation_embeddings[0], relation_embeddings[1], atol=1e-6),
-            "V10 full relation representation keeps relation ID embedding while adding type/strength features",
+            "Full relation representation keeps relation ID information while adding type/strength features",
         )
 
     def test_no_relation_aware_uses_relation_id_only(self) -> None:
@@ -103,14 +103,14 @@ class SemanticConvEV10AttentionTest(unittest.TestCase):
         self.assertTrue(torch.allclose(embeddings_a[0], embeddings_b[0], atol=1e-6))
         self.assertFalse(torch.allclose(embeddings_a[1], embeddings_b[1], atol=1e-6))
 
-    def test_gate_values_report_v10_residual_scales(self) -> None:
+    def test_gate_values_report_id_token_attention_fusion(self) -> None:
         model = self.build_model()
 
         values = model.gate_values()
 
-        self.assertEqual(values["fusion"], "feature-token self-attention + residual addition to ID embedding")
-        self.assertAlmostEqual(values["entity_residual_scale"], 0.05, places=6)
-        self.assertAlmostEqual(values["relation_residual_scale"], 0.05, places=6)
+        self.assertEqual(values["fusion"], "ID token + feature-token self-attention + MLP compression")
+        self.assertIn("entity_id", values["entity_features"]["uid"])
+        self.assertIn("relation_id", values["relation_features"])
 
     def test_can_score_tail_pairs_from_external_head_embeddings(self) -> None:
         model = self.build_model(
