@@ -1,9 +1,14 @@
 """Semantic and pedagogical feature-aware ConvE model.
 
-V11.2 treats the ID embedding as an explicit feature token together with
-semantic and pedagogical tokens. The active tokens are concatenated after
-masking inactive sources and compressed by an MLP back to the ConvE embedding
-dimension.
+This V11.2 variant uses compact type-specific raw feature concatenation:
+
+* learner: concat(ID_200, theta_1) -> MLP -> 200
+* exercise: concat(ID_200, text_100, difficulty_1, discrimination_1) -> MLP -> 200
+* knowledge concept: ID_200 -> MLP -> 200
+* relation: concat(relation_ID_200, relation_type_16, strength_1) -> MLP -> 200
+
+The final 200-dimensional entity/relation representations are then consumed by
+the original ConvE scoring module.
 """
 
 from __future__ import annotations
@@ -45,56 +50,45 @@ VALID_MODEL_ABLATIONS = {
     "hybrid_relation",
     "relation_id_only",
     "compact_features",
+    "no_theta",
+    "no_text",
+    "no_exercise_ped",
+    "no_relation_features",
     "id_only",
 }
 
-def _numeric_projector(input_dim: int, embedding_dim: int) -> nn.Module:
-    width = max(1, int(input_dim))
-    return nn.Sequential(
-        nn.Linear(width, embedding_dim),
-        nn.ReLU(),
-        nn.Linear(embedding_dim, embedding_dim),
-        nn.LayerNorm(embedding_dim),
-    )
 
+class RawConcatFusion(nn.Module):
+    """Fuse raw feature vectors by concatenation and an MLP.
 
-class FeatureConcatFusion(nn.Module):
-    """Fuse a fixed set of projected feature tokens with concat + MLP.
-
-    Each feature source is first projected into the ConvE embedding dimension.
-    Inactive tokens are zeroed by the active mask, all token slots are
-    concatenated, and an MLP compresses the concatenated representation back to
-    the ConvE embedding dimension.
+    Unlike the older token-mask implementation, this module does not create
+    zero placeholder tokens. Each caller passes exactly the features that should
+    be used by the current entity/relation type and ablation.
     """
 
-    def __init__(self, embedding_dim: int, token_count: int, dropout: float = 0.1) -> None:
+    def __init__(self, input_dim: int, embedding_dim: int, dropout: float = 0.1) -> None:
         super().__init__()
-        self.token_count = token_count
-        self.token_norm = nn.LayerNorm(embedding_dim)
+        self.input_dim = int(input_dim)
+        self.input_norm = nn.LayerNorm(self.input_dim)
         hidden_dim = embedding_dim * 2
         self.output = nn.Sequential(
-            nn.Linear(embedding_dim * token_count, hidden_dim),
+            nn.Linear(self.input_dim, hidden_dim),
             nn.ReLU(),
             nn.Dropout(dropout),
             nn.Linear(hidden_dim, embedding_dim),
         )
         self.output_norm = nn.LayerNorm(embedding_dim)
 
-    def forward(self, tokens: torch.Tensor, active_mask: torch.Tensor) -> torch.Tensor:
-        if tokens.dim() != 3:
-            raise ValueError("tokens must be shaped [batch, feature_count, embedding_dim]")
-        if active_mask.dim() != 2:
-            raise ValueError("active_mask must be shaped [batch, feature_count]")
-        if tokens.shape[1] != self.token_count:
-            raise ValueError(f"expected {self.token_count} feature tokens, got {tokens.shape[1]}")
-        normalized = self.token_norm(tokens)
-        masked = normalized * active_mask.to(tokens.dtype).unsqueeze(-1)
-        flattened = masked.reshape(tokens.shape[0], self.token_count * tokens.shape[2])
-        return self.output_norm(self.output(flattened))
+    def forward(self, features: torch.Tensor) -> torch.Tensor:
+        if features.dim() != 2:
+            raise ValueError("features must be shaped [batch, feature_dim]")
+        if features.shape[1] != self.input_dim:
+            raise ValueError(f"expected feature_dim={self.input_dim}, got {features.shape[1]}")
+        return self.output_norm(self.output(self.input_norm(features)))
 
 
 class SemanticConvE(nn.Module):
-    """ConvE with ID-token concat-MLP multi-source feature fusion."""
+    """ConvE with type-specific raw concat-MLP feature fusion."""
 
     def __init__(
         self,
@@ -138,23 +132,26 @@ class SemanticConvE(nn.Module):
         self.numeric_feature_slices = numeric_feature_slices or {"learner_irt": (0, 0), "exercise_irt": (0, 0)}
         self.state_feature_slices = state_feature_slices or {}
 
-        learner_irt_width = self._slice_width("learner_irt")
-        exercise_irt_width = self._slice_width("exercise_irt")
+        self.text_dim = max(1, int(text_dim))
+        self.learner_irt_width = max(1, self._slice_width("learner_irt"))
+        self.exercise_irt_width = max(1, self._slice_width("exercise_irt"))
+        self.relation_type_dim = 16
 
         self.emb_e = nn.Embedding(nentity, embedding_dim)
         self.relation_id_emb = nn.Embedding(nrelation, embedding_dim)
-        self.cluster_emb = nn.Embedding(NO_CLUSTER_ID + 1, embedding_dim)
-        self.relation_type_emb = nn.Embedding(len(RELATION_TYPE_TO_ID), embedding_dim)
+        self.relation_type_emb = nn.Embedding(len(RELATION_TYPE_TO_ID), self.relation_type_dim)
 
-        self.text_projector = nn.Sequential(
-            nn.Linear(max(1, text_dim), embedding_dim, bias=False),
-            nn.LayerNorm(embedding_dim),
+        self.uid_fusion = RawConcatFusion(embedding_dim + self.learner_irt_width, embedding_dim)
+        self.uid_id_fusion = RawConcatFusion(embedding_dim, embedding_dim)
+        self.exercise_fusion = RawConcatFusion(
+            embedding_dim + self.text_dim + self.exercise_irt_width,
+            embedding_dim,
         )
-        self.learner_irt_projector = _numeric_projector(learner_irt_width, embedding_dim)
-        self.exercise_irt_projector = _numeric_projector(exercise_irt_width, embedding_dim)
-        self.relation_strength_projector = _numeric_projector(1, embedding_dim)
-        self.entity_fusion = FeatureConcatFusion(embedding_dim, token_count=5)
-        self.relation_fusion = FeatureConcatFusion(embedding_dim, token_count=3)
+        self.exercise_no_text_fusion = RawConcatFusion(embedding_dim + self.exercise_irt_width, embedding_dim)
+        self.exercise_no_ped_fusion = RawConcatFusion(embedding_dim + self.text_dim, embedding_dim)
+        self.exercise_id_fusion = RawConcatFusion(embedding_dim, embedding_dim)
+        self.kc_fusion = RawConcatFusion(embedding_dim, embedding_dim)
+        self.relation_fusion = RawConcatFusion(embedding_dim + self.relation_type_dim + 1, embedding_dim)
         self.entity_norm = nn.LayerNorm(embedding_dim)
         self.relation_norm = nn.LayerNorm(embedding_dim)
 
@@ -203,7 +200,6 @@ class SemanticConvE(nn.Module):
     def init(self) -> None:
         xavier_normal_(self.emb_e.weight.data)
         xavier_normal_(self.relation_id_emb.weight.data)
-        xavier_normal_(self.cluster_emb.weight.data)
         xavier_normal_(self.relation_type_emb.weight.data)
 
     def _slice_width(self, name: str) -> int:
@@ -216,49 +212,56 @@ class SemanticConvE(nn.Module):
             return torch.zeros((entity_ids.numel(), 1), dtype=self.numeric_features.dtype, device=entity_ids.device)
         return self.numeric_features[entity_ids, start:end]
 
-    def _semantic_active(self, type_ids: torch.Tensor, entity_ids: torch.Tensor) -> torch.Tensor:
-        active = (
-            (type_ids == ENTITY_TYPE_TO_ID["kc"]) | (type_ids == ENTITY_TYPE_TO_ID["ex"])
-        ) & (self.semantic_quality[entity_ids, 0] > 0)
-        if self.ablation_mode in {"id_only", "no_content_entity", "no_semantic", "no_text_semantic"}:
-            active = torch.zeros_like(active)
-        elif self.ablation_mode in {"no_concept_semantic", "compact_features"}:
-            active = active & (type_ids != ENTITY_TYPE_TO_ID["kc"])
-        elif self.ablation_mode == "no_exercise_semantic":
-            active = active & (type_ids != ENTITY_TYPE_TO_ID["ex"])
-        return active
+    def _entity_text(self, entity_ids: torch.Tensor) -> torch.Tensor:
+        text_features = self.text_features[entity_ids]
+        if self.freeze_text_features:
+            text_features = text_features.detach()
+        if text_features.shape[1] == 0:
+            return torch.zeros((entity_ids.numel(), self.text_dim), dtype=self.emb_e.weight.dtype, device=entity_ids.device)
+        if text_features.shape[1] != self.text_dim:
+            raise ValueError(f"expected text_dim={self.text_dim}, got {text_features.shape[1]}")
+        return text_features
 
-    def _learner_irt_active(self, type_ids: torch.Tensor) -> torch.Tensor:
-        active = type_ids == ENTITY_TYPE_TO_ID["uid"]
-        if self.ablation_mode in {
+    def _uses_theta(self) -> bool:
+        return self.ablation_mode not in {
             "id_only",
+            "no_theta",
             "no_content_entity",
             "no_pedagogical",
             "no_irt",
             "stat_only_ped",
             "no_learner_irt",
-        }:
-            active = torch.zeros_like(active)
-        return active
+        }
 
-    def _exercise_irt_active(self, type_ids: torch.Tensor) -> torch.Tensor:
-        active = type_ids == ENTITY_TYPE_TO_ID["ex"]
-        if self.ablation_mode in {
+    def _uses_exercise_text(self) -> bool:
+        return self.ablation_mode not in {
             "id_only",
+            "no_text",
+            "no_content_entity",
+            "no_semantic",
+            "no_text_semantic",
+            "no_exercise_semantic",
+        }
+
+    def _uses_exercise_pedagogy(self) -> bool:
+        return self.ablation_mode not in {
+            "id_only",
+            "no_exercise_ped",
             "no_content_entity",
             "no_pedagogical",
             "no_irt",
             "stat_only_ped",
             "no_exercise_irt",
-        }:
-            active = torch.zeros_like(active)
-        return active
+        }
 
-    def _cluster_active(self, type_ids: torch.Tensor) -> torch.Tensor:
-        active = type_ids == ENTITY_TYPE_TO_ID["uid"]
-        if self.ablation_mode in {"id_only", "no_content_entity", "no_pedagogical", "no_cluster", "compact_features"}:
-            active = torch.zeros_like(active)
-        return active
+    def _uses_relation_features(self) -> bool:
+        return self.ablation_mode not in {
+            "id_only",
+            "no_relation_features",
+            "no_relation_aware",
+            "relation_id_only",
+            "discrete_relation",
+        }
 
     def entity_embedding(self, entity_ids: torch.Tensor) -> torch.Tensor:
         id_emb = self.emb_e(entity_ids)
@@ -266,61 +269,69 @@ class SemanticConvE(nn.Module):
             return self.entity_norm(id_emb)
 
         type_ids = self.entity_type_ids[entity_ids]
-        token_list: list[torch.Tensor] = [id_emb]
-        mask_list: list[torch.Tensor] = [torch.ones_like(entity_ids, dtype=torch.bool)]
+        fused_emb = torch.empty_like(id_emb)
 
-        text_features = self.text_features[entity_ids]
-        if self.freeze_text_features:
-            text_features = text_features.detach()
-        if text_features.shape[1] == 0:
-            text_features = torch.zeros((entity_ids.numel(), 1), dtype=id_emb.dtype, device=entity_ids.device)
-        token_list.append(self.text_projector(text_features))
-        mask_list.append(self._semantic_active(type_ids, entity_ids))
+        uid_mask = type_ids == ENTITY_TYPE_TO_ID["uid"]
+        if uid_mask.any():
+            uid_ids = entity_ids[uid_mask]
+            uid_id_emb = id_emb[uid_mask]
+            if self._uses_theta():
+                theta = self._slice_numeric(uid_ids, "learner_irt")
+                fused_emb[uid_mask] = self.uid_fusion(torch.cat([uid_id_emb, theta], dim=1))
+            else:
+                fused_emb[uid_mask] = self.uid_id_fusion(uid_id_emb)
 
-        learner_irt = self._slice_numeric(entity_ids, "learner_irt")
-        token_list.append(self.learner_irt_projector(learner_irt))
-        mask_list.append(self._learner_irt_active(type_ids))
+        ex_mask = type_ids == ENTITY_TYPE_TO_ID["ex"]
+        if ex_mask.any():
+            ex_ids = entity_ids[ex_mask]
+            ex_id_emb = id_emb[ex_mask]
+            use_text = self._uses_exercise_text()
+            use_ped = self._uses_exercise_pedagogy()
+            if use_text and use_ped:
+                fused_emb[ex_mask] = self.exercise_fusion(
+                    torch.cat([ex_id_emb, self._entity_text(ex_ids), self._slice_numeric(ex_ids, "exercise_irt")], dim=1)
+                )
+            elif use_text:
+                fused_emb[ex_mask] = self.exercise_no_ped_fusion(torch.cat([ex_id_emb, self._entity_text(ex_ids)], dim=1))
+            elif use_ped:
+                fused_emb[ex_mask] = self.exercise_no_text_fusion(
+                    torch.cat([ex_id_emb, self._slice_numeric(ex_ids, "exercise_irt")], dim=1)
+                )
+            else:
+                fused_emb[ex_mask] = self.exercise_id_fusion(ex_id_emb)
 
-        exercise_irt = self._slice_numeric(entity_ids, "exercise_irt")
-        token_list.append(self.exercise_irt_projector(exercise_irt))
-        mask_list.append(self._exercise_irt_active(type_ids))
+        kc_mask = type_ids == ENTITY_TYPE_TO_ID["kc"]
+        if kc_mask.any():
+            fused_emb[kc_mask] = self.kc_fusion(id_emb[kc_mask])
 
-        cluster_ids = self.cluster_ids[entity_ids].clamp(min=0, max=NO_CLUSTER_ID)
-        token_list.append(self.cluster_emb(cluster_ids))
-        mask_list.append(self._cluster_active(type_ids))
+        other_mask = ~(uid_mask | ex_mask | kc_mask)
+        if other_mask.any():
+            fused_emb[other_mask] = id_emb[other_mask]
 
-        tokens = torch.stack(token_list, dim=1)
-        active_mask = torch.stack(mask_list, dim=1)
-        fused_emb = self.entity_fusion(tokens, active_mask)
         return self.entity_norm(fused_emb)
 
     def gate_values(self) -> dict[str, object]:
         return {
-            "fusion": "ID token + active feature-token concatenation + MLP compression",
+            "fusion": "type-specific raw feature concatenation + MLP compression",
             "entity_features": {
-                "uid": ["entity_id", "theta_mirt_norm", "cluster_id"],
-                "ex": ["entity_id", "topic_v/text", "difficulty_mirt_norm", "discrimination_mirt_norm"],
-                "kc": ["entity_id", "concept_semantic"],
+                "uid": ["entity_id_200", "theta_mirt_norm_1"],
+                "ex": ["entity_id_200", "topic_v/text_100", "difficulty_mirt_norm_1", "discrimination_mirt_norm_1"],
+                "kc": ["entity_id_200"],
             },
-            "relation_features": ["relation_id", "relation_type", "relation_strength"],
+            "relation_features": ["relation_id_200", "relation_type_16", "relation_strength_1"],
             "ablation": self.ablation_mode,
         }
 
     def relation_embedding(self, relation_ids: torch.Tensor) -> torch.Tensor:
         id_emb = self.relation_id_emb(relation_ids)
-        if self.ablation_mode in {"id_only", "no_relation_aware", "relation_id_only", "discrete_relation"}:
+        if not self._uses_relation_features():
             return self.relation_norm(id_emb)
 
-        type_token = self.relation_type_emb(self.relation_type_ids[relation_ids])
-        strength_token = self.relation_strength_projector(self.relation_strengths[relation_ids])
-        type_active = torch.ones_like(relation_ids, dtype=torch.bool)
-        strength_active = torch.ones_like(relation_ids, dtype=torch.bool)
+        type_emb = self.relation_type_emb(self.relation_type_ids[relation_ids])
+        strength = self.relation_strengths[relation_ids]
         if self.ablation_mode == "no_relation_strength":
-            strength_active = torch.zeros_like(strength_active)
-        id_active = torch.ones_like(relation_ids, dtype=torch.bool)
-        tokens = torch.stack([id_emb, type_token, strength_token], dim=1)
-        active_mask = torch.stack([id_active, type_active, strength_active], dim=1)
-        relation_emb = self.relation_fusion(tokens, active_mask)
+            strength = torch.zeros_like(strength)
+        relation_emb = self.relation_fusion(torch.cat([id_emb, type_emb, strength], dim=1))
         return self.relation_norm(relation_emb)
 
     def conve_transform(self, h_emb: torch.Tensor, r_emb: torch.Tensor) -> torch.Tensor:

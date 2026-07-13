@@ -1,4 +1,4 @@
-"""Unit checks for ID-token concat-MLP SemanticConvE representations."""
+"""Unit checks for compact raw-concat SemanticConvE representations."""
 
 from __future__ import annotations
 
@@ -10,7 +10,7 @@ from feature_loader import ENTITY_TYPE_TO_ID, NO_CLUSTER_ID, RELATION_TYPE_TO_ID
 from semantic_conve_model import SemanticConvE
 
 
-class SemanticConvEV10AttentionTest(unittest.TestCase):
+class SemanticConvECompactConcatTest(unittest.TestCase):
     def build_model(
         self,
         entity_type_ids: torch.Tensor | None = None,
@@ -88,50 +88,73 @@ class SemanticConvEV10AttentionTest(unittest.TestCase):
 
         self.assertTrue(torch.allclose(model_a.entity_embedding(entity_ids), model_b.entity_embedding(entity_ids), atol=1e-6))
 
-    def test_no_concept_semantic_only_masks_concept_text(self) -> None:
+    def test_no_theta_masks_learner_theta(self) -> None:
         model_a = self.build_model()
         model_b = self.build_model()
-        model_a.ablation_mode = "no_concept_semantic"
-        model_b.ablation_mode = "no_concept_semantic"
+        model_a.ablation_mode = "no_theta"
+        model_b.ablation_mode = "no_theta"
         model_a.eval()
         model_b.eval()
         with torch.no_grad():
-            model_b.text_features[1, 0] = 1.0
-            model_b.text_features[2, 0] = 1.0
+            model_b.numeric_features[0, 0] = 1.0
 
-        embeddings_a = model_a.entity_embedding(torch.tensor([1, 2], dtype=torch.long))
-        embeddings_b = model_b.entity_embedding(torch.tensor([1, 2], dtype=torch.long))
+        embeddings_a = model_a.entity_embedding(torch.tensor([0], dtype=torch.long))
+        embeddings_b = model_b.entity_embedding(torch.tensor([0], dtype=torch.long))
 
-        self.assertTrue(torch.allclose(embeddings_a[0], embeddings_b[0], atol=1e-6))
-        self.assertFalse(torch.allclose(embeddings_a[1], embeddings_b[1], atol=1e-6))
+        self.assertTrue(torch.allclose(embeddings_a, embeddings_b, atol=1e-6))
 
-    def test_compact_features_masks_concept_text_and_cluster(self) -> None:
+    def test_no_text_masks_exercise_text(self) -> None:
         model_a = self.build_model()
         model_b = self.build_model()
-        model_a.ablation_mode = "compact_features"
-        model_b.ablation_mode = "compact_features"
+        model_a.ablation_mode = "no_text"
+        model_b.ablation_mode = "no_text"
         model_a.eval()
         model_b.eval()
         with torch.no_grad():
-            model_b.text_features[1, 0] = 1.0
             model_b.text_features[2, 0] = 1.0
-            model_b.cluster_ids[0] = 1
 
-        embeddings_a = model_a.entity_embedding(torch.tensor([0, 1, 2], dtype=torch.long))
-        embeddings_b = model_b.entity_embedding(torch.tensor([0, 1, 2], dtype=torch.long))
+        embeddings_a = model_a.entity_embedding(torch.tensor([2], dtype=torch.long))
+        embeddings_b = model_b.entity_embedding(torch.tensor([2], dtype=torch.long))
 
-        self.assertTrue(torch.allclose(embeddings_a[0], embeddings_b[0], atol=1e-6))
-        self.assertTrue(torch.allclose(embeddings_a[1], embeddings_b[1], atol=1e-6))
-        self.assertFalse(torch.allclose(embeddings_a[2], embeddings_b[2], atol=1e-6))
+        self.assertTrue(torch.allclose(embeddings_a, embeddings_b, atol=1e-6))
+
+    def test_no_exercise_ped_masks_exercise_irt(self) -> None:
+        model_a = self.build_model()
+        model_b = self.build_model()
+        model_a.ablation_mode = "no_exercise_ped"
+        model_b.ablation_mode = "no_exercise_ped"
+        model_a.eval()
+        model_b.eval()
+        with torch.no_grad():
+            model_b.numeric_features[2, 1:] = torch.tensor([0.3, 0.9])
+
+        embeddings_a = model_a.entity_embedding(torch.tensor([2], dtype=torch.long))
+        embeddings_b = model_b.entity_embedding(torch.tensor([2], dtype=torch.long))
+
+        self.assertTrue(torch.allclose(embeddings_a, embeddings_b, atol=1e-6))
+
+    def test_full_exercise_uses_text_and_pedagogical_features(self) -> None:
+        model_a = self.build_model()
+        model_b = self.build_model()
+        model_a.eval()
+        model_b.eval()
+        with torch.no_grad():
+            model_b.text_features[2, 0] = 1.0
+            model_b.numeric_features[2, 1:] = torch.tensor([0.3, 0.9])
+
+        embeddings_a = model_a.entity_embedding(torch.tensor([2], dtype=torch.long))
+        embeddings_b = model_b.entity_embedding(torch.tensor([2], dtype=torch.long))
+
+        self.assertFalse(torch.allclose(embeddings_a, embeddings_b, atol=1e-6))
 
     def test_gate_values_report_id_token_concat_mlp_fusion(self) -> None:
         model = self.build_model()
 
         values = model.gate_values()
 
-        self.assertEqual(values["fusion"], "ID token + active feature-token concatenation + MLP compression")
-        self.assertIn("entity_id", values["entity_features"]["uid"])
-        self.assertIn("relation_id", values["relation_features"])
+        self.assertEqual(values["fusion"], "type-specific raw feature concatenation + MLP compression")
+        self.assertIn("entity_id_200", values["entity_features"]["uid"])
+        self.assertIn("relation_id_200", values["relation_features"])
 
     def test_can_score_tail_pairs_from_external_head_embeddings(self) -> None:
         model = self.build_model(

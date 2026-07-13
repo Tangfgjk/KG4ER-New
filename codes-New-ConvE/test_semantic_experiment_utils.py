@@ -73,9 +73,9 @@ class SemanticExperimentUtilsTest(unittest.TestCase):
 
                 os.chdir(cwd)
 
-    def test_model_version_marks_v10_attention_front_files(self) -> None:
-        self.assertIn("v10", MODEL_VERSION)
-        self.assertIn("attn", MODEL_VERSION)
+    def test_model_version_marks_compact_raw_concat_mlp(self) -> None:
+        self.assertIn("v11_2", MODEL_VERSION)
+        self.assertIn("compact_raw_concat_mlp", MODEL_VERSION)
 
     def test_ablation_model_dir_keeps_full_backward_compatible(self) -> None:
         self.assertEqual(ablation_model_dir("full"), "SemanticConvE")
@@ -90,13 +90,10 @@ class SemanticExperimentUtilsTest(unittest.TestCase):
             ablations,
             [
                 "full",
-                "id_only",
-                "compact_features",
-                "no_pedagogical",
-                "no_text_semantic",
-                "no_concept_semantic",
-                "no_relation_aware",
-                "no_type_aware_scoring",
+                "no_theta",
+                "no_text",
+                "no_exercise_ped",
+                "no_relation_features",
                 "no_mastery",
                 "no_forgetting",
                 "no_seq",
