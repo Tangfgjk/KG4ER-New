@@ -73,9 +73,9 @@ class SemanticExperimentUtilsTest(unittest.TestCase):
 
                 os.chdir(cwd)
 
-    def test_model_version_marks_compact_raw_concat_mlp(self) -> None:
-        self.assertIn("v11_2", MODEL_VERSION)
-        self.assertIn("compact_raw_concat_mlp", MODEL_VERSION)
+    def test_model_version_marks_raw_concat_padded_conve(self) -> None:
+        self.assertIn("v11_3", MODEL_VERSION)
+        self.assertIn("raw_concat_padded_conve", MODEL_VERSION)
 
     def test_ablation_model_dir_keeps_full_backward_compatible(self) -> None:
         self.assertEqual(ablation_model_dir("full"), "SemanticConvE")

@@ -46,9 +46,10 @@ class SemanticConvECompactConcatTest(unittest.TestCase):
             text_features=torch.zeros((nentity, text_dim), dtype=torch.float32),
             numeric_features=numeric_features,
             semantic_quality=torch.ones((nentity, 1), dtype=torch.float32),
-            embedding_dim=20,
-            embedding_shape1=4,
-            hidden_size=576,
+            embedding_dim=40,
+            id_embedding_dim=20,
+            embedding_shape1=8,
+            hidden_size=1344,
             numeric_feature_slices={"learner_irt": (0, 1), "exercise_irt": (1, 3)},
         )
 
@@ -71,7 +72,7 @@ class SemanticConvECompactConcatTest(unittest.TestCase):
         relation_embeddings = model.relation_embedding(relation_ids)
 
         with torch.no_grad():
-            expected = model.relation_norm(model.relation_id_emb(relation_ids))
+            expected = model.relation_norm(model.relation_id_fusion(model.relation_id_emb(relation_ids)))
         self.assertTrue(torch.allclose(relation_embeddings, expected, atol=1e-6))
 
     def test_id_only_entity_is_independent_from_side_features(self) -> None:
@@ -147,12 +148,12 @@ class SemanticConvECompactConcatTest(unittest.TestCase):
 
         self.assertFalse(torch.allclose(embeddings_a, embeddings_b, atol=1e-6))
 
-    def test_gate_values_report_id_token_concat_mlp_fusion(self) -> None:
+    def test_gate_values_report_raw_concat_padding_fusion(self) -> None:
         model = self.build_model()
 
         values = model.gate_values()
 
-        self.assertEqual(values["fusion"], "type-specific raw feature concatenation + MLP compression")
+        self.assertEqual(values["fusion"], "type-specific raw feature concatenation + zero padding to ConvE dimension")
         self.assertIn("entity_id_200", values["entity_features"]["uid"])
         self.assertIn("relation_id_200", values["relation_features"])
 

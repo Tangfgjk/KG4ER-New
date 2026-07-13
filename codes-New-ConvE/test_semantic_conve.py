@@ -154,9 +154,10 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--cuda", default="auto")
     parser.add_argument("--ablation", choices=sorted(VALID_MODEL_ABLATIONS), default="full")
     parser.add_argument("--batch-size", type=int, default=256)
-    parser.add_argument("--embedding-dim", "--embedding_dim", dest="embedding_dim", type=int, default=200)
+    parser.add_argument("--embedding-dim", "--embedding_dim", dest="embedding_dim", type=int, default=320)
+    parser.add_argument("--id-embedding-dim", "--id_embedding_dim", dest="id_embedding_dim", type=int, default=200)
     parser.add_argument("--embedding-shape1", "--embedding_shape1", dest="embedding_shape1", type=int, default=20)
-    parser.add_argument("--hidden-size", "--hidden_size", dest="hidden_size", type=int, default=9728)
+    parser.add_argument("--hidden-size", "--hidden_size", dest="hidden_size", type=int, default=17024)
     parser.add_argument("--input-drop", "--input_drop", dest="input_drop", type=float, default=0.2)
     parser.add_argument("--hidden-drop", "--hidden_drop", dest="hidden_drop", type=float, default=0.2)
     parser.add_argument("--feat-drop", "--feat_drop", dest="feat_drop", type=float, default=0.3)
@@ -176,6 +177,7 @@ def main() -> None:
     model = SemanticConvE.from_feature_bundle(
         bundle,
         embedding_dim=args.embedding_dim,
+        id_embedding_dim=args.id_embedding_dim,
         embedding_shape1=args.embedding_shape1,
         hidden_size=args.hidden_size,
         input_drop=args.input_drop,

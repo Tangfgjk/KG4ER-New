@@ -214,9 +214,10 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--epochs", type=int, default=25)
     parser.add_argument("--bs", type=int, default=1024)
     parser.add_argument("--learning-rate", "--learning_rate", dest="learning_rate", type=float, default=0.001)
-    parser.add_argument("--embedding-dim", "--embedding_dim", dest="embedding_dim", type=int, default=200)
+    parser.add_argument("--embedding-dim", "--embedding_dim", dest="embedding_dim", type=int, default=320)
+    parser.add_argument("--id-embedding-dim", "--id_embedding_dim", dest="id_embedding_dim", type=int, default=200)
     parser.add_argument("--embedding-shape1", "--embedding_shape1", dest="embedding_shape1", type=int, default=20)
-    parser.add_argument("--hidden-size", "--hidden_size", dest="hidden_size", type=int, default=9728)
+    parser.add_argument("--hidden-size", "--hidden_size", dest="hidden_size", type=int, default=17024)
     parser.add_argument("--input-drop", "--input_drop", dest="input_drop", type=float, default=0.2)
     parser.add_argument("--hidden-drop", "--hidden_drop", dest="hidden_drop", type=float, default=0.2)
     parser.add_argument("--feat-drop", "--feat_drop", dest="feat_drop", type=float, default=0.3)
@@ -268,6 +269,7 @@ def main() -> None:
     model = SemanticConvE.from_feature_bundle(
         bundle,
         embedding_dim=args.embedding_dim,
+        id_embedding_dim=args.id_embedding_dim,
         embedding_shape1=args.embedding_shape1,
         hidden_size=args.hidden_size,
         input_drop=args.input_drop,
@@ -338,9 +340,9 @@ def main() -> None:
             "seed": args.seed,
             "ablation": args.ablation,
             "checkpoint": "best.pt" if best_path.exists() else "last.pt",
-            "entity_fusion": "V10 attention fusion: ID embedding + residual self-attention over active side-feature tokens",
-            "semantic_quality": "enabled as a fixed mask for text feature tokens",
-            "state_encoder": "disabled in V10-attn; learner entities use ID embedding plus theta_mirt_norm and cluster_id feature tokens",
+            "entity_fusion": "V11.3 raw concatenation followed by zero-padding to ConvE embedding_dim",
+            "semantic_quality": "loaded for compatibility; compact V11.3 uses configured raw text features directly",
+            "state_encoder": "disabled; learner entities use ID embedding plus theta_mirt_norm when enabled by ablation",
             "gate_values": model.gate_values(),
         },
     )
@@ -356,8 +358,8 @@ def main() -> None:
             "state_feature_slices": bundle.state_feature_slices,
             "state_feature_dim": int(bundle.state_features.shape[1]),
             "learner_representation": (
-                "V10-attn does not replace learner ID with state-aware head embedding; "
-                "learner side features are fused as residual tokens"
+                "V11.3 does not replace learner ID with state-aware head embedding; "
+                "learner side features are concatenated and padded to the ConvE dimension"
             ),
             "include_test_triples": args.include_test_triples,
         },
@@ -370,7 +372,7 @@ def main() -> None:
             "dataset": args.dataset_name,
             "seed": args.seed,
             "ablation": args.ablation,
-            "full_relation_encoding": "relation ID embedding + residual self-attention over relation type and continuous strength tokens",
+            "full_relation_encoding": "relation ID embedding + relation type embedding + continuous strength, then zero-padding",
             "relation_id_embedding_used": True,
             "relation_type_to_id": bundle.metadata.get("relation_type_to_id"),
         },
@@ -396,8 +398,9 @@ def main() -> None:
             "feature_dir": bundle.metadata["feature_dir"],
             "text_embedding_model": bundle.metadata["text_manifest"].get("model"),
             "embedding_dim": args.embedding_dim,
-            "relation_encoding": "relation ID embedding with attention-fused relation type and continuous relation strength residual",
-            "entity_fusion": "entity ID embedding with attention-fused semantic and pedagogical residual tokens",
+            "id_embedding_dim": args.id_embedding_dim,
+            "relation_encoding": "raw concat of relation ID, relation type, and continuous relation strength, padded to embedding_dim",
+            "entity_fusion": "raw concat of compact entity features, padded to embedding_dim without MLP compression",
             "state_feature_dim": int(bundle.state_features.shape[1]),
             "state_feature_slices": bundle.state_feature_slices,
             "numeric_feature_slices": bundle.numeric_feature_slices,

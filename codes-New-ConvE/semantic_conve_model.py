@@ -1,13 +1,14 @@
 """Semantic and pedagogical feature-aware ConvE model.
 
-This V11.2 variant uses compact type-specific raw feature concatenation:
+This V11.3 variant uses compact type-specific raw feature concatenation and
+zero-padding:
 
-* learner: concat(ID_200, theta_1) -> MLP -> 200
-* exercise: concat(ID_200, text_100, difficulty_1, discrimination_1) -> MLP -> 200
-* knowledge concept: ID_200 -> MLP -> 200
-* relation: concat(relation_ID_200, relation_type_16, strength_1) -> MLP -> 200
+* learner: concat(ID_200, theta_1) -> pad -> 320
+* exercise: concat(ID_200, text_100, difficulty_1, discrimination_1) -> pad -> 320
+* knowledge concept: ID_200 -> pad -> 320
+* relation: concat(relation_ID_200, relation_type_16, strength_1) -> pad -> 320
 
-The final 200-dimensional entity/relation representations are then consumed by
+The final 320-dimensional entity/relation representations are then consumed by
 the original ConvE scoring module.
 """
 
@@ -58,37 +59,33 @@ VALID_MODEL_ABLATIONS = {
 }
 
 
-class RawConcatFusion(nn.Module):
-    """Fuse raw feature vectors by concatenation and an MLP.
+class RawConcatPadding(nn.Module):
+    """Fuse raw feature vectors by concatenation and zero-padding.
 
-    Unlike the older token-mask implementation, this module does not create
-    zero placeholder tokens. Each caller passes exactly the features that should
-    be used by the current entity/relation type and ablation.
+    Each caller passes exactly the features that should be used by the current
+    entity/relation type and ablation. The vector is padded on the right to the
+    ConvE embedding dimension without MLP compression.
     """
 
-    def __init__(self, input_dim: int, embedding_dim: int, dropout: float = 0.1) -> None:
+    def __init__(self, input_dim: int, target_dim: int) -> None:
         super().__init__()
         self.input_dim = int(input_dim)
-        self.input_norm = nn.LayerNorm(self.input_dim)
-        hidden_dim = embedding_dim * 2
-        self.output = nn.Sequential(
-            nn.Linear(self.input_dim, hidden_dim),
-            nn.ReLU(),
-            nn.Dropout(dropout),
-            nn.Linear(hidden_dim, embedding_dim),
-        )
-        self.output_norm = nn.LayerNorm(embedding_dim)
+        self.target_dim = int(target_dim)
+        if self.input_dim > self.target_dim:
+            raise ValueError(f"input_dim={self.input_dim} cannot exceed target_dim={self.target_dim}")
 
     def forward(self, features: torch.Tensor) -> torch.Tensor:
         if features.dim() != 2:
             raise ValueError("features must be shaped [batch, feature_dim]")
         if features.shape[1] != self.input_dim:
             raise ValueError(f"expected feature_dim={self.input_dim}, got {features.shape[1]}")
-        return self.output_norm(self.output(self.input_norm(features)))
+        if self.input_dim == self.target_dim:
+            return features
+        return F.pad(features, (0, self.target_dim - self.input_dim), mode="constant", value=0.0)
 
 
 class SemanticConvE(nn.Module):
-    """ConvE with type-specific raw concat-MLP feature fusion."""
+    """ConvE with type-specific raw concat-padding feature fusion."""
 
     def __init__(
         self,
@@ -104,9 +101,10 @@ class SemanticConvE(nn.Module):
         numeric_features: torch.Tensor,
         semantic_quality: torch.Tensor,
         state_features: Optional[torch.Tensor] = None,
-        embedding_dim: int = 200,
+        embedding_dim: int = 320,
+        id_embedding_dim: int = 200,
         embedding_shape1: int = 20,
-        hidden_size: int = 9728,
+        hidden_size: int = 17024,
         input_drop: float = 0.2,
         hidden_drop: float = 0.2,
         feat_drop: float = 0.3,
@@ -125,6 +123,7 @@ class SemanticConvE(nn.Module):
         self.nentity = nentity
         self.nrelation = nrelation
         self.embedding_dim = embedding_dim
+        self.id_embedding_dim = id_embedding_dim
         self.emb_dim1 = embedding_shape1
         self.emb_dim2 = embedding_dim // embedding_shape1
         self.freeze_text_features = freeze_text_features
@@ -137,21 +136,22 @@ class SemanticConvE(nn.Module):
         self.exercise_irt_width = max(1, self._slice_width("exercise_irt"))
         self.relation_type_dim = 16
 
-        self.emb_e = nn.Embedding(nentity, embedding_dim)
-        self.relation_id_emb = nn.Embedding(nrelation, embedding_dim)
+        self.emb_e = nn.Embedding(nentity, id_embedding_dim)
+        self.relation_id_emb = nn.Embedding(nrelation, id_embedding_dim)
         self.relation_type_emb = nn.Embedding(len(RELATION_TYPE_TO_ID), self.relation_type_dim)
 
-        self.uid_fusion = RawConcatFusion(embedding_dim + self.learner_irt_width, embedding_dim)
-        self.uid_id_fusion = RawConcatFusion(embedding_dim, embedding_dim)
-        self.exercise_fusion = RawConcatFusion(
-            embedding_dim + self.text_dim + self.exercise_irt_width,
+        self.uid_fusion = RawConcatPadding(id_embedding_dim + self.learner_irt_width, embedding_dim)
+        self.uid_id_fusion = RawConcatPadding(id_embedding_dim, embedding_dim)
+        self.exercise_fusion = RawConcatPadding(
+            id_embedding_dim + self.text_dim + self.exercise_irt_width,
             embedding_dim,
         )
-        self.exercise_no_text_fusion = RawConcatFusion(embedding_dim + self.exercise_irt_width, embedding_dim)
-        self.exercise_no_ped_fusion = RawConcatFusion(embedding_dim + self.text_dim, embedding_dim)
-        self.exercise_id_fusion = RawConcatFusion(embedding_dim, embedding_dim)
-        self.kc_fusion = RawConcatFusion(embedding_dim, embedding_dim)
-        self.relation_fusion = RawConcatFusion(embedding_dim + self.relation_type_dim + 1, embedding_dim)
+        self.exercise_no_text_fusion = RawConcatPadding(id_embedding_dim + self.exercise_irt_width, embedding_dim)
+        self.exercise_no_ped_fusion = RawConcatPadding(id_embedding_dim + self.text_dim, embedding_dim)
+        self.exercise_id_fusion = RawConcatPadding(id_embedding_dim, embedding_dim)
+        self.kc_fusion = RawConcatPadding(id_embedding_dim, embedding_dim)
+        self.relation_fusion = RawConcatPadding(id_embedding_dim + self.relation_type_dim + 1, embedding_dim)
+        self.relation_id_fusion = RawConcatPadding(id_embedding_dim, embedding_dim)
         self.entity_norm = nn.LayerNorm(embedding_dim)
         self.relation_norm = nn.LayerNorm(embedding_dim)
 
@@ -266,10 +266,14 @@ class SemanticConvE(nn.Module):
     def entity_embedding(self, entity_ids: torch.Tensor) -> torch.Tensor:
         id_emb = self.emb_e(entity_ids)
         if self.ablation_mode == "id_only":
-            return self.entity_norm(id_emb)
+            return self.entity_norm(self.uid_id_fusion(id_emb))
 
         type_ids = self.entity_type_ids[entity_ids]
-        fused_emb = torch.empty_like(id_emb)
+        fused_emb = torch.empty(
+            (entity_ids.numel(), self.embedding_dim),
+            dtype=id_emb.dtype,
+            device=entity_ids.device,
+        )
 
         uid_mask = type_ids == ENTITY_TYPE_TO_ID["uid"]
         if uid_mask.any():
@@ -306,26 +310,32 @@ class SemanticConvE(nn.Module):
 
         other_mask = ~(uid_mask | ex_mask | kc_mask)
         if other_mask.any():
-            fused_emb[other_mask] = id_emb[other_mask]
+            fused_emb[other_mask] = self.uid_id_fusion(id_emb[other_mask])
 
         return self.entity_norm(fused_emb)
 
     def gate_values(self) -> dict[str, object]:
         return {
-            "fusion": "type-specific raw feature concatenation + MLP compression",
+            "fusion": "type-specific raw feature concatenation + zero padding to ConvE dimension",
             "entity_features": {
-                "uid": ["entity_id_200", "theta_mirt_norm_1"],
-                "ex": ["entity_id_200", "topic_v/text_100", "difficulty_mirt_norm_1", "discrimination_mirt_norm_1"],
-                "kc": ["entity_id_200"],
+                "uid": ["entity_id_200", "theta_mirt_norm_1", "zero_padding_to_320"],
+                "ex": [
+                    "entity_id_200",
+                    "topic_v/text_100",
+                    "difficulty_mirt_norm_1",
+                    "discrimination_mirt_norm_1",
+                    "zero_padding_to_320",
+                ],
+                "kc": ["entity_id_200", "zero_padding_to_320"],
             },
-            "relation_features": ["relation_id_200", "relation_type_16", "relation_strength_1"],
+            "relation_features": ["relation_id_200", "relation_type_16", "relation_strength_1", "zero_padding_to_320"],
             "ablation": self.ablation_mode,
         }
 
     def relation_embedding(self, relation_ids: torch.Tensor) -> torch.Tensor:
         id_emb = self.relation_id_emb(relation_ids)
         if not self._uses_relation_features():
-            return self.relation_norm(id_emb)
+            return self.relation_norm(self.relation_id_fusion(id_emb))
 
         type_emb = self.relation_type_emb(self.relation_type_ids[relation_ids])
         strength = self.relation_strengths[relation_ids]

@@ -12,7 +12,7 @@ from pathlib import Path
 from typing import Any, Iterable, List, Sequence
 
 
-MODEL_VERSION = "semantic_conve_v11_2_compact_raw_concat_mlp"
+MODEL_VERSION = "semantic_conve_v11_3_raw_concat_padded_conve"
 
 VALID_ABLATIONS = [
     "full",
