@@ -90,6 +90,7 @@ class SemanticExperimentUtilsTest(unittest.TestCase):
             ablations,
             [
                 "full",
+                "id_only",
                 "no_theta",
                 "no_text",
                 "no_exercise_ped",
