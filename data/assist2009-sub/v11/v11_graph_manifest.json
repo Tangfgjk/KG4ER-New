@@ -1,0 +1,56 @@
+{
+  "dataset": "assist2009-sub",
+  "version": "v11_front_files",
+  "source_graph_dir": "C:\\Users\\29694\\Desktop\\我的文件\\陆子欣师姐\\2025陆子欣\\Code-New\\ER\\KG4ER\\data\\assist2009-sub\\prepared_for_kt",
+  "output_dir": "C:\\Users\\29694\\Desktop\\我的文件\\陆子欣师姐\\2025陆子欣\\Code-New\\ER\\KG4ER-New\\data\\assist2009-sub\\v11",
+  "state_sources": {
+    "stu2know_mastery": "C:\\Users\\29694\\Desktop\\我的文件\\陆子欣师姐\\2025陆子欣\\Code-New\\ER\\KG4ER-New\\data\\assist2009-sub\\v11\\stu2know_mastery.json",
+    "stu2know_seq": "C:\\Users\\29694\\Desktop\\我的文件\\陆子欣师姐\\2025陆子欣\\Code-New\\ER\\KG4ER-New\\data\\assist2009-sub\\v11\\stu2know_seq.json",
+    "stu2know_forget": "C:\\Users\\29694\\Desktop\\我的文件\\陆子欣师姐\\2025陆子欣\\Code-New\\ER\\KG4ER-New\\data\\assist2009-sub\\v11\\stu2know_forget.json"
+  },
+  "forgetting": {
+    "stu2ex_forget": "average of linked knowledge-concept forgetting rates from stu2know_forget and Q.txt",
+    "range": {
+      "shape": [
+        430,
+        1987
+      ],
+      "min": 0.0,
+      "max": 1.0,
+      "mean": 0.8027981153731812,
+      "std": 0.3741316484424083,
+      "unique_rows": 369
+    }
+  },
+  "recommendation": {
+    "sequence_term": "one_minus_cos_sq",
+    "distance_formula": "sqrt((delta1 - mastery_product)^2 + sequence_term + (delta2 - exercise_forget)^2)",
+    "ranking_precision": "full precision scores; stu2ex_recommend.json is rounded only for storage/readability",
+    "delta_1": 0.8,
+    "delta_2": 0.8,
+    "top_k_rec": 10
+  },
+  "split": {
+    "source": "source_triples",
+    "train_students": 322,
+    "test_students": 108
+  },
+  "relation_count": 304,
+  "triple_counts": {
+    "train": {
+      "mlkc": 47978,
+      "pkc": 47978,
+      "exfr": 639814,
+      "rec": 3220
+    },
+    "test": {
+      "mlkc": 16092,
+      "pkc": 16092,
+      "exfr": 214596,
+      "rec": 0
+    }
+  },
+  "copied_evaluation_files": [
+    "assist2009-sub_uid_kc_response.txt"
+  ]
+}

@@ -1,0 +1,630 @@
+{
+  "data_root": "data",
+  "reports": [
+    {
+      "dataset": "Eedi",
+      "graph_dir": "data\\Eedi\\v11",
+      "errors": [],
+      "warnings": [
+        "stu2know_seq std is small: 0.000001",
+        "stu2know_seq unique-row ratio is low: 0.002139",
+        "stu2know_seq min > 0.9: 0.999996"
+      ],
+      "status": "passed",
+      "entity_count": 1940,
+      "learner_count": 935,
+      "exercise_count": 948,
+      "concept_count": 57,
+      "relation_count": 304,
+      "matrices": {
+        "stu2know_mastery": {
+          "shape": [
+            935,
+            57
+          ],
+          "min": 0.027448,
+          "max": 0.999964,
+          "mean": 0.5533101158457642,
+          "std": 0.12112123955573272,
+          "unique_rows": 935
+        },
+        "stu2know_seq": {
+          "shape": [
+            935,
+            57
+          ],
+          "min": 0.999996,
+          "max": 1.0,
+          "mean": 0.9999993333145698,
+          "std": 7.798595255887175e-07,
+          "unique_rows": 2
+        },
+        "stu2know_forget": {
+          "shape": [
+            935,
+            57
+          ],
+          "min": 0.0,
+          "max": 1.0,
+          "mean": 0.4077553793789286,
+          "std": 0.4373530387193874,
+          "unique_rows": 935
+        },
+        "stu2ex_forget": {
+          "shape": [
+            935,
+            948
+          ],
+          "min": 0.0,
+          "max": 1.0,
+          "mean": 0.2516745316004423,
+          "std": 0.3701588713886774,
+          "unique_rows": 935
+        },
+        "stu2ex_recommend": {
+          "shape": [
+            935,
+            948
+          ],
+          "min": 0.867771,
+          "max": 1.404445,
+          "mean": 1.1185015193991283,
+          "std": 0.11439945488134493,
+          "unique_rows": 935
+        }
+      },
+      "recommendation": {
+        "rounded_2_decimal_tie_ratio": 0.9996299555495386,
+        "ranking_precision": "full precision scores; stu2ex_recommend.json is rounded only for storage/readability",
+        "sequence_term": "one_minus_cos_sq"
+      },
+      "triples": {
+        "train": {
+          "exists": true,
+          "total": 751472,
+          "by_type": {
+            "mlkc": 39957,
+            "pkc": 39957,
+            "exfr": 664548,
+            "rec": 7010
+          },
+          "value_one_by_type": {
+            "pkc": 39957,
+            "exfr": 112109,
+            "mlkc": 45
+          },
+          "value_one_ratio_by_type": {
+            "mlkc": 0.001126210676477213,
+            "pkc": 1.0,
+            "exfr": 0.1686996274159278,
+            "rec": 0.0
+          }
+        },
+        "test": {
+          "exists": true,
+          "total": 248508,
+          "by_type": {
+            "mlkc": 13338,
+            "pkc": 13338,
+            "exfr": 221832
+          },
+          "value_one_by_type": {
+            "pkc": 13338,
+            "mlkc": 20,
+            "exfr": 41232
+          },
+          "value_one_ratio_by_type": {
+            "mlkc": 0.00149947518368571,
+            "pkc": 1.0,
+            "exfr": 0.18587038840203396
+          }
+        }
+      },
+      "semantic_features": {
+        "exists": true,
+        "text_manifest": true,
+        "concept_semantics": true,
+        "exercise_semantics": true,
+        "learner_pedagogy": true,
+        "exercise_irt": true
+      }
+    },
+    {
+      "dataset": "algebra2005",
+      "graph_dir": "data\\algebra2005\\v11",
+      "errors": [],
+      "warnings": [
+        "stu2know_seq std is small: 0.000295",
+        "stu2know_seq min > 0.9: 0.994258"
+      ],
+      "status": "passed",
+      "entity_count": 1340,
+      "learner_count": 144,
+      "exercise_count": 1084,
+      "concept_count": 112,
+      "relation_count": 304,
+      "matrices": {
+        "stu2know_mastery": {
+          "shape": [
+            144,
+            112
+          ],
+          "min": 0.445545,
+          "max": 0.915026,
+          "mean": 0.5242269807167659,
+          "std": 0.063733130071289,
+          "unique_rows": 144
+        },
+        "stu2know_seq": {
+          "shape": [
+            144,
+            112
+          ],
+          "min": 0.994258,
+          "max": 1.0,
+          "mean": 0.9999191761532739,
+          "std": 0.00029487510246013944,
+          "unique_rows": 144
+        },
+        "stu2know_forget": {
+          "shape": [
+            144,
+            112
+          ],
+          "min": 0.0,
+          "max": 1.0,
+          "mean": 0.7314058115699404,
+          "std": 0.3950344217426142,
+          "unique_rows": 144
+        },
+        "stu2ex_forget": {
+          "shape": [
+            144,
+            1084
+          ],
+          "min": 0.0,
+          "max": 1.0,
+          "mean": 0.5588678941356602,
+          "std": 0.35133344438444,
+          "unique_rows": 144
+        },
+        "stu2ex_recommend": {
+          "shape": [
+            144,
+            1084
+          ],
+          "min": 0.925671,
+          "max": 1.361184,
+          "mean": 1.1283359087548688,
+          "std": 0.09218202044718964,
+          "unique_rows": 144
+        }
+      },
+      "recommendation": {
+        "rounded_2_decimal_tie_ratio": 0.9981485752357523,
+        "ranking_precision": "full precision scores; stu2ex_recommend.json is rounded only for storage/readability",
+        "sequence_term": "one_minus_cos_sq"
+      },
+      "triples": {
+        "train": {
+          "exists": true,
+          "total": 142344,
+          "by_type": {
+            "mlkc": 12096,
+            "pkc": 12096,
+            "exfr": 117072,
+            "rec": 1080
+          },
+          "value_one_by_type": {
+            "pkc": 12093,
+            "exfr": 33332
+          },
+          "value_one_ratio_by_type": {
+            "mlkc": 0.0,
+            "pkc": 0.9997519841269841,
+            "exfr": 0.284713680470138,
+            "rec": 0.0
+          }
+        },
+        "test": {
+          "exists": true,
+          "total": 47088,
+          "by_type": {
+            "mlkc": 4032,
+            "pkc": 4032,
+            "exfr": 39024
+          },
+          "value_one_by_type": {
+            "pkc": 4031,
+            "exfr": 12088
+          },
+          "value_one_ratio_by_type": {
+            "mlkc": 0.0,
+            "pkc": 0.9997519841269841,
+            "exfr": 0.30975809758097583
+          }
+        }
+      },
+      "semantic_features": {
+        "exists": true,
+        "text_manifest": true,
+        "concept_semantics": true,
+        "exercise_semantics": true,
+        "learner_pedagogy": true,
+        "exercise_irt": true
+      }
+    },
+    {
+      "dataset": "assist2009-sub",
+      "graph_dir": "data\\assist2009-sub\\v11",
+      "errors": [],
+      "warnings": [],
+      "status": "passed",
+      "entity_count": 2566,
+      "learner_count": 430,
+      "exercise_count": 1987,
+      "concept_count": 149,
+      "relation_count": 304,
+      "matrices": {
+        "stu2know_mastery": {
+          "shape": [
+            430,
+            149
+          ],
+          "min": 0.105748,
+          "max": 0.875564,
+          "mean": 0.5484077245668798,
+          "std": 0.14480376096808403,
+          "unique_rows": 430
+        },
+        "stu2know_seq": {
+          "shape": [
+            430,
+            149
+          ],
+          "min": 0.251154,
+          "max": 0.999997,
+          "mean": 0.9605943765724988,
+          "std": 0.13732871796379226,
+          "unique_rows": 426
+        },
+        "stu2know_forget": {
+          "shape": [
+            430,
+            149
+          ],
+          "min": 0.0,
+          "max": 1.0,
+          "mean": 0.9685945350241923,
+          "std": 0.16344225193734915,
+          "unique_rows": 369
+        },
+        "stu2ex_forget": {
+          "shape": [
+            430,
+            1987
+          ],
+          "min": 0.0,
+          "max": 1.0,
+          "mean": 0.8027981153731812,
+          "std": 0.3741316484424083,
+          "unique_rows": 369
+        },
+        "stu2ex_recommend": {
+          "shape": [
+            430,
+            1987
+          ],
+          "min": 0.919443,
+          "max": 1.327598,
+          "mean": 1.0259774625203357,
+          "std": 0.09888423940981995,
+          "unique_rows": 430
+        }
+      },
+      "recommendation": {
+        "rounded_2_decimal_tie_ratio": 0.9998490186210368,
+        "ranking_precision": "full precision scores; stu2ex_recommend.json is rounded only for storage/readability",
+        "sequence_term": "one_minus_cos_sq"
+      },
+      "triples": {
+        "train": {
+          "exists": true,
+          "total": 738990,
+          "by_type": {
+            "mlkc": 47978,
+            "pkc": 47978,
+            "exfr": 639814,
+            "rec": 3220
+          },
+          "value_one_by_type": {
+            "pkc": 39923,
+            "exfr": 496943
+          },
+          "value_one_ratio_by_type": {
+            "mlkc": 0.0,
+            "pkc": 0.8321105506690567,
+            "exfr": 0.7766991656950302,
+            "rec": 0.0
+          }
+        },
+        "test": {
+          "exists": true,
+          "total": 246780,
+          "by_type": {
+            "mlkc": 16092,
+            "pkc": 16092,
+            "exfr": 214596
+          },
+          "value_one_by_type": {
+            "pkc": 13474,
+            "exfr": 159246
+          },
+          "value_one_ratio_by_type": {
+            "mlkc": 0.0,
+            "pkc": 0.8373104648272434,
+            "exfr": 0.7420734776044288
+          }
+        }
+      },
+      "semantic_features": {
+        "exists": true,
+        "text_manifest": true,
+        "concept_semantics": true,
+        "exercise_semantics": true,
+        "learner_pedagogy": true,
+        "exercise_irt": true
+      }
+    },
+    {
+      "dataset": "statics2011",
+      "graph_dir": "data\\statics2011\\v11",
+      "errors": [],
+      "warnings": [
+        "stu2know_seq std is small: 0.006970"
+      ],
+      "status": "passed",
+      "entity_count": 813,
+      "learner_count": 83,
+      "exercise_count": 633,
+      "concept_count": 97,
+      "relation_count": 304,
+      "matrices": {
+        "stu2know_mastery": {
+          "shape": [
+            83,
+            97
+          ],
+          "min": 0.284117,
+          "max": 0.930962,
+          "mean": 0.5346394531114147,
+          "std": 0.05617942014680228,
+          "unique_rows": 83
+        },
+        "stu2know_seq": {
+          "shape": [
+            83,
+            97
+          ],
+          "min": 0.882952,
+          "max": 0.999982,
+          "mean": 0.9952800675692461,
+          "std": 0.006969864025128775,
+          "unique_rows": 83
+        },
+        "stu2know_forget": {
+          "shape": [
+            83,
+            97
+          ],
+          "min": 0.0,
+          "max": 1.0,
+          "mean": 0.43896993590858274,
+          "std": 0.42150129024049976,
+          "unique_rows": 81
+        },
+        "stu2ex_forget": {
+          "shape": [
+            83,
+            633
+          ],
+          "min": 0.0,
+          "max": 1.0,
+          "mean": 0.32262120078417944,
+          "std": 0.3977786722297278,
+          "unique_rows": 81
+        },
+        "stu2ex_recommend": {
+          "shape": [
+            83,
+            633
+          ],
+          "min": 0.920054,
+          "max": 1.297542,
+          "mean": 1.1201344824796817,
+          "std": 0.10407870435600186,
+          "unique_rows": 83
+        }
+      },
+      "recommendation": {
+        "rounded_2_decimal_tie_ratio": 0.9985724890081655,
+        "ranking_precision": "full precision scores; stu2ex_recommend.json is rounded only for storage/readability",
+        "sequence_term": "one_minus_cos_sq"
+      },
+      "triples": {
+        "train": {
+          "exists": true,
+          "total": 51894,
+          "by_type": {
+            "mlkc": 6014,
+            "pkc": 6014,
+            "exfr": 39246,
+            "rec": 620
+          },
+          "value_one_by_type": {
+            "pkc": 4270,
+            "exfr": 10549
+          },
+          "value_one_ratio_by_type": {
+            "mlkc": 0.0,
+            "pkc": 0.7100099767209843,
+            "exfr": 0.2687917239973501,
+            "rec": 0.0
+          }
+        },
+        "test": {
+          "exists": true,
+          "total": 17367,
+          "by_type": {
+            "mlkc": 2037,
+            "pkc": 2037,
+            "exfr": 13293
+          },
+          "value_one_by_type": {
+            "pkc": 1522,
+            "exfr": 2465
+          },
+          "value_one_ratio_by_type": {
+            "mlkc": 0.0,
+            "pkc": 0.7471772214040255,
+            "exfr": 0.1854359437297826
+          }
+        }
+      },
+      "semantic_features": {
+        "exists": true,
+        "text_manifest": true,
+        "concept_semantics": true,
+        "exercise_semantics": true,
+        "learner_pedagogy": true,
+        "exercise_irt": true
+      }
+    },
+    {
+      "dataset": "XES3G5M-sub-small",
+      "graph_dir": "data\\XES3G5M-sub-small\\v11",
+      "errors": [],
+      "warnings": [
+        "stu2know_seq std is small: 0.000166",
+        "stu2know_seq min > 0.9: 0.997159"
+      ],
+      "status": "passed",
+      "entity_count": 2684,
+      "learner_count": 348,
+      "exercise_count": 1928,
+      "concept_count": 408,
+      "relation_count": 304,
+      "matrices": {
+        "stu2know_mastery": {
+          "shape": [
+            348,
+            408
+          ],
+          "min": 0.483931,
+          "max": 0.966362,
+          "mean": 0.5795425602180528,
+          "std": 0.026532603629747752,
+          "unique_rows": 348
+        },
+        "stu2know_seq": {
+          "shape": [
+            348,
+            408
+          ],
+          "min": 0.997159,
+          "max": 1.0,
+          "mean": 0.9998862887438023,
+          "std": 0.00016605790694190789,
+          "unique_rows": 348
+        },
+        "stu2know_forget": {
+          "shape": [
+            348,
+            408
+          ],
+          "min": 0.0,
+          "max": 1.0,
+          "mean": 0.8777813164300204,
+          "std": 0.23707552488205916,
+          "unique_rows": 348
+        },
+        "stu2ex_forget": {
+          "shape": [
+            348,
+            1928
+          ],
+          "min": 0.0,
+          "max": 1.0,
+          "mean": 0.7996594521688841,
+          "std": 0.2714038177809304,
+          "unique_rows": 348
+        },
+        "stu2ex_recommend": {
+          "shape": [
+            348,
+            1928
+          ],
+          "min": 0.950492,
+          "max": 1.38721,
+          "mean": 1.0213866184703941,
+          "std": 0.06365673723838114,
+          "unique_rows": 348
+        }
+      },
+      "recommendation": {
+        "rounded_2_decimal_tie_ratio": 0.9985945175752372,
+        "ranking_precision": "full precision scores; stu2ex_recommend.json is rounded only for storage/readability",
+        "sequence_term": "one_minus_cos_sq"
+      },
+      "triples": {
+        "train": {
+          "exists": true,
+          "total": 718794,
+          "by_type": {
+            "mlkc": 106488,
+            "pkc": 106488,
+            "exfr": 503208,
+            "rec": 2610
+          },
+          "value_one_by_type": {
+            "pkc": 106488,
+            "exfr": 230994
+          },
+          "value_one_ratio_by_type": {
+            "mlkc": 0.0,
+            "pkc": 1.0,
+            "exfr": 0.4590427815138074,
+            "rec": 0.0
+          }
+        },
+        "test": {
+          "exists": true,
+          "total": 238728,
+          "by_type": {
+            "mlkc": 35496,
+            "pkc": 35496,
+            "exfr": 167736
+          },
+          "value_one_by_type": {
+            "pkc": 35496,
+            "exfr": 80005
+          },
+          "value_one_ratio_by_type": {
+            "mlkc": 0.0,
+            "pkc": 1.0,
+            "exfr": 0.47696976200696334
+          }
+        }
+      },
+      "semantic_features": {
+        "exists": true,
+        "text_manifest": true,
+        "concept_semantics": true,
+        "exercise_semantics": true,
+        "learner_pedagogy": true,
+        "exercise_irt": true
+      }
+    }
+  ],
+  "status": "passed"
+}
