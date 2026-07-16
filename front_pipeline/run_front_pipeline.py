@@ -34,7 +34,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--ektm-epochs", type=int, default=30)
     parser.add_argument("--ektm-batch-size", type=int, default=16)
     parser.add_argument("--device", default="cuda")
-    parser.add_argument("--theta", type=float, default=10_000_000.0)
+    parser.add_argument("--theta", default="auto", help="Positive decay denominator or 'auto' for per-dataset calibration.")
     parser.add_argument("--timestamp-unit", default="auto", choices=["auto", "seconds", "milliseconds", "minutes", "days"])
     parser.add_argument("--sequence-term", default="one_minus_cos_sq", choices=["one_minus_cos_sq", "legacy_cos_sq"])
     parser.add_argument("--force", action="store_true")
