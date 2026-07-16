@@ -125,12 +125,15 @@ def validate_dataset(dataset: str, data_root: Path) -> dict[str, Any]:
     if seq.size:
         seq_std = float(np.std(seq))
         seq_unique_ratio = float(np.unique(np.round(seq, 8), axis=0).shape[0] / max(1, seq.shape[0]))
+        seq_high_ratio = float(np.mean(seq >= 0.99))
         if seq_std < 0.03:
             warnings.append(f"stu2know_seq std is small: {seq_std:.6f}")
         if seq_unique_ratio < 0.8:
             warnings.append(f"stu2know_seq unique-row ratio is low: {seq_unique_ratio:.6f}")
         if float(np.min(seq)) > 0.9:
             warnings.append(f"stu2know_seq min > 0.9: {float(np.min(seq)):.6f}")
+        if seq_high_ratio > 0.8:
+            warnings.append(f"stu2know_seq is saturated: fraction >= 0.99 is {seq_high_ratio:.6f}")
     relation_count = count_relations(graph_dir / "relations.dict")
     if relation_count != 304:
         errors.append(f"relation_count {relation_count} != 304")
@@ -163,6 +166,23 @@ def validate_dataset(dataset: str, data_root: Path) -> dict[str, Any]:
             errors.append("text embedding manifest must identify EKTM_mirt TopicRNNModel topic_v source")
 
     manifest = read_json(graph_dir / "v11_graph_manifest.json") if (graph_dir / "v11_graph_manifest.json").exists() else {}
+    pkc_manifest_path = graph_dir / "pkc_lstm" / "pkc_lstm_manifest.json"
+    pkc_status: dict[str, Any] = {"exists": pkc_manifest_path.exists()}
+    if pkc_manifest_path.exists():
+        pkc_manifest = read_json(pkc_manifest_path)
+        pkc_status.update(
+            {
+                "model": pkc_manifest.get("model"),
+                "target_mode": pkc_manifest.get("target_mode"),
+                "input_mode": pkc_manifest.get("input_mode"),
+                "multi_concept_exercises_preserved": pkc_manifest.get("multi_concept_exercises_preserved"),
+                "positive_weight": pkc_manifest.get("positive_weight"),
+            }
+        )
+        if pkc_status["target_mode"] != "next_exercise_multihot_q":
+            errors.append("PKC manifest target_mode is not next_exercise_multihot_q")
+        if pkc_status["multi_concept_exercises_preserved"] is not True:
+            errors.append("PKC manifest does not confirm preservation of multi-concept exercises")
     report.update(
         {
             "status": "failed" if errors else "passed",
@@ -188,6 +208,7 @@ def validate_dataset(dataset: str, data_root: Path) -> dict[str, Any]:
                 "test": triple_relation_stats(graph_dir / "test_triples.txt"),
             },
             "semantic_features": feature_status,
+            "pkc_lstm": pkc_status,
         }
     )
     return report

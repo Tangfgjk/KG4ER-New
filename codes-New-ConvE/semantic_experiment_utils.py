@@ -60,6 +60,7 @@ DEFAULT_ALL_ABLATIONS = [
     "no_mastery",
     "no_forgetting",
     "no_seq",
+    "no_type_aware_scoring",
 ]
 
 DEFAULT_DATASETS = [
@@ -90,13 +91,9 @@ def project_root() -> Path:
 
 
 def default_data_root() -> Path:
-    bundled_data = kg4er_new_root() / "data"
-    if bundled_data.exists():
-        return bundled_data
-    legacy_data = er_root() / "KG4ER" / "data"
-    if legacy_data.exists():
-        return legacy_data
-    return bundled_data
+    # The active workflow keeps raw data, front-model outputs, and ER graphs together.
+    # Legacy KG4ER/data remains intentionally outside the execution path.
+    return kg4er_new_root() / "Data_Fin"
 
 
 def default_runs_root() -> Path:

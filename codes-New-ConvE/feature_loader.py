@@ -187,8 +187,8 @@ def _load_text_embeddings(feature_dir: Path) -> tuple[Dict[str, np.ndarray], int
     manifest_path = emb_dir / "text_embedding_manifest.json"
     if not manifest_path.exists():
         raise FileNotFoundError(
-            f"Missing {manifest_path}. Strict V10 requires EKTM_mirt TopicRNNModel topic_v embeddings. "
-            "Run v10_pipeline/import_ektm_topic_embeddings_v10.py first."
+            f"Missing {manifest_path}. SemanticConvE requires EKTM-MIRT Bi-GRU text embeddings. "
+            "Run front_pipeline/run_front_pipeline.py through the semantic-feature stage first."
         )
     manifest = read_json(manifest_path)
     model_name = str(

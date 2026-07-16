@@ -18,7 +18,7 @@ from common import (
     read_q_matrix,
     read_triple_students,
     relation_label,
-    source_data_root,
+    resolve_source_data_root,
     source_dataset_dir,
     sorted_entities,
     v11_dataset_dir,
@@ -153,7 +153,7 @@ def require_or_copy_matrix(
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Build V11 ER graph files from regenerated cognitive-state files.")
     parser.add_argument("--dataset", required=True)
-    parser.add_argument("--source-data-root", type=Path, default=source_data_root())
+    parser.add_argument("--source-data-root", type=Path, default=None)
     parser.add_argument("--output-data-root", type=Path, default=output_data_root())
     parser.add_argument("--mastery-file", type=Path, default=None)
     parser.add_argument("--seq-file", type=Path, default=None)
@@ -171,7 +171,8 @@ def parse_args() -> argparse.Namespace:
 
 def main() -> None:
     args = parse_args()
-    source_dir = source_dataset_dir(args.dataset, args.source_data_root)
+    resolved_source_root = resolve_source_data_root(args.dataset, args.source_data_root, args.output_data_root)
+    source_dir = source_dataset_dir(args.dataset, resolved_source_root)
     source_graph_dir = locate_source_graph_dir(source_dir)
     output_dir = v11_dataset_dir(args.dataset, args.output_data_root)
     if output_dir.exists() and any(output_dir.iterdir()) and not args.force:

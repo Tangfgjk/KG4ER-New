@@ -1,27 +1,21 @@
-# KG4ER-New
+# KG4ER-New V-Fin
 
-This repository contains the portable training, testing, evaluation, and ablation code for the SemanticConvE exercise recommendation model.
+This branch contains the current end-to-end experiment workflow for
+SemanticConvE exercise recommendation:
 
-Current branch: **V9**. V9 uses the V8 no-Q MIRT preprocessing outputs, keeps the raw ConvE recommendation score as the final score, and defines a compact ConvE ablation suite:
+1. Canonical raw datasets in `Data_Fin/<dataset>/raw/`.
+2. Front-feature generation: Q-constrained MIRT, multi-label sequence model,
+   EKTM-MIRT, forgetting features, semantic features, and ER-graph building.
+3. SemanticConvE full and ablation experiments.
+4. ID-only KGE and traditional recommendation baselines.
 
-```text
-full
-hybrid_relation
-id_only
-relation_id_only
-no_type_aware_scoring
-```
+`Data_Fin/` is versioned on this branch. It contains all five canonical raw
+datasets, plus any already generated front features and ER graphs. Training
+checkpoints remain intentionally excluded.
 
-Data files are not included. To run experiments on a new computer, clone this repository and copy the prepared dataset folders into:
+The V11 compatibility pipeline is retained because the current EKTM-MIRT
+front trainer imports its model definition from it. The retired V10 pipeline
+and historical command documents are not part of this branch.
 
-```text
-data/
-```
-
-The expected dataset structure is documented in:
-
-```text
-docs-for-git/RUN_COMMANDS.md
-```
-
-The code is designed to preserve the existing `score(uid, rec, exercise)` experiment flow while adding semantic/pedagogical feature fusion, MIRT-derived educational features, relation-aware encoding, and type-aware exercise scoring.
+Complete setup, generation, training, resumption, and result-summary commands
+are in [docs/V-Fin-全流程运行命令.md](docs/V-Fin-%E5%85%A8%E6%B5%81%E7%A8%8B%E8%BF%90%E8%A1%8C%E5%91%BD%E4%BB%A4.md).

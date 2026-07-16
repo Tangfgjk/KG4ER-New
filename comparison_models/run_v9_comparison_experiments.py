@@ -20,15 +20,15 @@ from run_dataset_experiments import (
 
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
-DEFAULT_DATA_ROOT = REPO_ROOT / "data"
+DEFAULT_DATA_ROOT = REPO_ROOT / "Data_Fin"
 DEFAULT_RUN_ROOT = REPO_ROOT / "runs"
 
 
 def parse_args(argv=None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         description=(
-            "Run V9 ID-only comparison models on an existing ER graph directory, "
-            "usually data/<dataset>/er_v8."
+            "Run ID-only comparison models on an existing ER graph directory, "
+            "usually Data_Fin/<dataset>/er_graph."
         )
     )
     parser.add_argument("--dataset", required=True)
@@ -96,7 +96,7 @@ def write_v9_manifest(args: argparse.Namespace, batch_dir: Path, data_dir: Path,
             "kge_experiments": list(KGE_EXPERIMENTS),
             "traditional_baselines": TRADITIONAL_BASELINES,
             "command": " ".join(sys.argv),
-            "notes": "V9 comparison runner uses ID-only KGE and traditional baselines on the selected er_v8 graph.",
+            "notes": "The comparison runner uses ID-only KGE and traditional baselines on the selected ER graph.",
         },
         batch_dir / "manifest.json",
     )

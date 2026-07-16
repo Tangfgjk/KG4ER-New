@@ -3,6 +3,7 @@ from __future__ import annotations
 import csv
 import json
 import math
+import os
 import re
 import shutil
 from pathlib import Path
@@ -82,6 +83,38 @@ def source_dataset_dir(dataset: str, data_root: Path | None = None) -> Path:
 
 def v11_dataset_dir(dataset: str, data_root: Path | None = None) -> Path:
     return (data_root or output_data_root()) / dataset / "v11"
+
+
+def resolve_source_data_root(dataset: str, explicit_root: Path | None = None, output_root: Path | None = None) -> Path:
+    """Resolve immutable KG4ER source data without treating V11 outputs as source."""
+    candidates: list[Path] = []
+    if explicit_root is not None:
+        candidates.append(explicit_root)
+    env_root = os.environ.get("KG4ER_SOURCE_DATA_ROOT")
+    if env_root:
+        candidates.append(Path(env_root))
+    candidates.append(source_data_root())
+
+    manifest_path = v11_dataset_dir(dataset, output_root) / "v11_graph_manifest.json"
+    if manifest_path.exists():
+        try:
+            manifest = read_json(manifest_path)
+            graph_path = manifest.get("source_graph_dir")
+            if graph_path:
+                graph_dir = Path(graph_path)
+                dataset_dir = graph_dir.parent if graph_dir.name == "prepared_for_kt" else graph_dir
+                candidates.append(dataset_dir.parent)
+        except (json.JSONDecodeError, OSError):
+            pass
+
+    for root in candidates:
+        if (root / dataset).exists():
+            return root
+    searched = ", ".join(str(path) for path in candidates)
+    raise FileNotFoundError(
+        f"Cannot find immutable source data for {dataset}. Checked: {searched}. "
+        "Pass --source-data-root or set KG4ER_SOURCE_DATA_ROOT."
+    )
 
 
 def locate_source_graph_dir(dataset_dir: Path) -> Path:

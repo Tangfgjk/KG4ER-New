@@ -11,6 +11,12 @@ semantic_features/
 *.npy
 *.pkl
 
+# V-Fin versions the reproducible raw data and inference-time text/MIRT
+# arrays. Keep training checkpoints excluded, but retain .npy arrays under
+# Data_Fin so a freshly cloned repository can run ER experiments directly.
+!Data_Fin/
+!Data_Fin/**/*.npy
+
 # Python caches and local environments.
 __pycache__/
 *.py[cod]
