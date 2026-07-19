@@ -71,7 +71,8 @@ DEFAULT_DATASETS = [
     "XES3G5M-sub-small",
 ]
 
-DEFAULT_TOP_KS = [10, 15, 20, 30, 50, 75, 100]
+# Use a regular recommendation-length grid for every experiment and report.
+DEFAULT_TOP_KS = list(range(10, 101, 10))
 
 
 def code_dir() -> Path:

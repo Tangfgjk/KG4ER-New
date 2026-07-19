@@ -16,7 +16,7 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument("--dataset", required=True)
     parser.add_argument("--output-data-root", type=Path, default=output_data_root())
-    parser.add_argument("--top-ks", default="10,15,20,30,50,75,100")
+    parser.add_argument("--top-ks", default="10,20,30,40,50,60,70,80,90,100")
     parser.add_argument("--target-mastery", type=float, default=0.8)
     parser.add_argument("--nov-alpha", type=float, default=1.0)
     parser.add_argument("--ep-top-k", type=int, default=10)

@@ -7,16 +7,7 @@ from pathlib import Path
 from statistics import mean, stdev
 
 
-TOP_KS = (10, 15, 20, 30, 50, 75, 100)
-AVG_WEIGHTS = {
-    10: 0.05,
-    15: 0.05,
-    20: 0.05,
-    30: 0.10,
-    50: 0.15,
-    75: 0.25,
-    100: 0.35,
-}
+TOP_KS = tuple(range(10, 101, 10))
 PREFERRED_MODEL_ORDER = (
     "ConvE_full",
     "ConvE_no_seq",
@@ -134,12 +125,6 @@ def _payload_to_row(payload, path, source):
     for top_k in TOP_KS:
         row[f"ACC@{top_k}"] = _round(payload["ACC"][str(top_k)]["mean"])
         row[f"NOV@{top_k}"] = _round(payload["NOV"][str(top_k)]["mean"])
-    row["ACC-Avg"] = _round(
-        sum(AVG_WEIGHTS[top_k] * row[f"ACC@{top_k}"] for top_k in TOP_KS)
-    )
-    row["NOV-Avg"] = _round(
-        sum(AVG_WEIGHTS[top_k] * row[f"NOV@{top_k}"] for top_k in TOP_KS)
-    )
     row["Ep_sim@10"] = _round(payload["Ep_sim"]["mean"])
     row.update(_load_complete_timing(path))
     return row
@@ -249,7 +234,6 @@ def aggregate_results(rows):
 
     metric_names = [f"ACC@{top_k}" for top_k in TOP_KS]
     metric_names += [f"NOV@{top_k}" for top_k in TOP_KS]
-    metric_names += ["ACC-Avg", "NOV-Avg"]
     metric_names.append("Ep_sim@10")
     summary = []
     for model in sorted(grouped, key=_model_sort_key):
@@ -303,7 +287,6 @@ def _per_seed_fieldnames():
     fields = ["dataset", "model", "seed", "source", "metrics_file", "timing_file"]
     fields += [f"ACC@{top_k}" for top_k in TOP_KS]
     fields += [f"NOV@{top_k}" for top_k in TOP_KS]
-    fields += ["ACC-Avg", "NOV-Avg"]
     fields.append("Ep_sim@10")
     fields += [
         "Training Seconds",
@@ -319,9 +302,6 @@ def _summary_fieldnames():
     for prefix in ("ACC", "NOV"):
         for top_k in TOP_KS:
             fields.extend([f"{prefix}@{top_k}_mean", f"{prefix}@{top_k}_std"])
-    fields.extend(
-        ["ACC-Avg_mean", "ACC-Avg_std", "NOV-Avg_mean", "NOV-Avg_std"]
-    )
     fields.extend(["Ep_sim@10_mean", "Ep_sim@10_std"])
     fields.extend(
         [
@@ -373,11 +353,10 @@ def write_markdown_report(dataset, rows, summary, metadata, path):
         "",
         "## Statistical scope",
         "",
-        "- Metrics: `ACC/NOV @ 10,15,20,30,50,75,100` and `Ep_sim@10`.",
+        "- Metrics: `ACC/NOV @ 10,20,30,40,50,60,70,80,90,100` and `Ep_sim@10`.",
         "- Per-seed tables retain the mean stored in each `eval/metrics.json`.",
         "- Model summaries report `mean ± sample std`; sample std uses `ddof=1`.",
         "- Deterministic single-run baselines have no cross-seed standard deviation.",
-        "- Weighted Avg uses weights `0.05, 0.05, 0.05, 0.10, 0.15, 0.25, 0.35` for K=`10,15,20,30,50,75,100`.",
         "- Maximum complete runtime selects the seed with the largest sum of training, uncached inference, and metric-evaluation seconds; no runtime mean or std is calculated.",
         f"- Final result rows: {metadata['final_result_count']}; replaced rows: {metadata['replacement_count']}.",
         "",
@@ -397,7 +376,6 @@ def write_markdown_report(dataset, rows, summary, metadata, path):
 
     lines.extend(["## Model mean ± sample std", "", "### ACC", ""])
     acc_headers = ["Model", "Runs"] + [f"ACC@{top_k}" for top_k in TOP_KS]
-    acc_headers.append("ACC-Avg")
     acc_rows = []
     for item in summary:
         acc_rows.append(
@@ -408,15 +386,12 @@ def write_markdown_report(dataset, rows, summary, metadata, path):
                 )
                 for top_k in TOP_KS
             ]
-            + [
-                _format_summary(item["ACC-Avg_mean"], item["ACC-Avg_std"])
-            ]
         )
     lines.extend(_markdown_table(acc_headers, acc_rows, range(1, len(acc_headers))))
 
     lines.extend(["", "### NOV and Ep_sim", ""])
     nov_headers = ["Model", "Runs"] + [f"NOV@{top_k}" for top_k in TOP_KS]
-    nov_headers.extend(["NOV-Avg", "Ep_sim@10"])
+    nov_headers.append("Ep_sim@10")
     nov_rows = []
     for item in summary:
         nov_rows.append(
@@ -426,9 +401,6 @@ def write_markdown_report(dataset, rows, summary, metadata, path):
                     item[f"NOV@{top_k}_mean"], item[f"NOV@{top_k}_std"]
                 )
                 for top_k in TOP_KS
-            ]
-            + [
-                _format_summary(item["NOV-Avg_mean"], item["NOV-Avg_std"])
             ]
             + [
                 _format_summary(
@@ -466,7 +438,6 @@ def write_markdown_report(dataset, rows, summary, metadata, path):
     raw_acc_headers = ["Model", "Seed", "Source"] + [
         f"ACC@{top_k}" for top_k in TOP_KS
     ]
-    raw_acc_headers.append("ACC-Avg")
     raw_acc_rows = [
         [
             item["model"],
@@ -474,7 +445,6 @@ def write_markdown_report(dataset, rows, summary, metadata, path):
             item["source"],
         ]
         + [f"{item[f'ACC@{top_k}']:.6f}" for top_k in TOP_KS]
-        + [f"{item['ACC-Avg']:.6f}"]
         for item in rows
     ]
     lines.extend(
@@ -485,7 +455,7 @@ def write_markdown_report(dataset, rows, summary, metadata, path):
     raw_nov_headers = ["Model", "Seed", "Source"] + [
         f"NOV@{top_k}" for top_k in TOP_KS
     ]
-    raw_nov_headers.extend(["NOV-Avg", "Ep_sim@10"])
+    raw_nov_headers.append("Ep_sim@10")
     raw_nov_rows = [
         [
             item["model"],
@@ -493,7 +463,6 @@ def write_markdown_report(dataset, rows, summary, metadata, path):
             item["source"],
         ]
         + [f"{item[f'NOV@{top_k}']:.6f}" for top_k in TOP_KS]
-        + [f"{item['NOV-Avg']:.6f}"]
         + [f"{item['Ep_sim@10']:.6f}"]
         for item in rows
     ]
@@ -503,95 +472,51 @@ def write_markdown_report(dataset, rows, summary, metadata, path):
     path.write_text("\n".join(lines) + "\n", encoding="utf-8")
 
 
-def write_paper_avg_csv(summary, path):
-    fieldnames = [
-        "Model",
-        "Runs",
-        "ACC-Avg Mean",
-        "ACC-Avg Std",
-        "NOV-Avg Mean",
-        "NOV-Avg Std",
-        "Ep_sim@10 Mean",
-        "Ep_sim@10 Std",
-        "Max-Time Seed",
-        "Training Seconds",
-        "Inference Seconds",
-        "Evaluation Seconds",
-        "Total Seconds",
-    ]
+def write_paper_metrics_csv(summary, path):
+    fieldnames = ["Model", "Runs", "Metric"]
+    for top_k in TOP_KS:
+        fieldnames.extend([f"@{top_k} Mean", f"@{top_k} Std"])
+    fieldnames.extend(["Ep_sim@10 Mean", "Ep_sim@10 Std"])
     with path.open("w", encoding="utf-8-sig", newline="") as fp:
         writer = csv.DictWriter(fp, fieldnames=fieldnames)
         writer.writeheader()
         for item in summary:
-            writer.writerow(
-                {
-                    "Model": item["model"],
-                    "Runs": item["run_count"],
-                    "ACC-Avg Mean": item["ACC-Avg_mean"],
-                    "ACC-Avg Std": item["ACC-Avg_std"],
-                    "NOV-Avg Mean": item["NOV-Avg_mean"],
-                    "NOV-Avg Std": item["NOV-Avg_std"],
-                    "Ep_sim@10 Mean": item["Ep_sim@10_mean"],
-                    "Ep_sim@10 Std": item["Ep_sim@10_std"],
-                    "Max-Time Seed": item["max_time_seed"],
-                    "Training Seconds": item["max_training_seconds"],
-                    "Inference Seconds": item["max_inference_seconds"],
-                    "Evaluation Seconds": item["max_evaluation_seconds"],
-                    "Total Seconds": item["max_total_seconds"],
-                }
-            )
+            for metric in ("ACC", "NOV"):
+                row = {"Model": item["model"], "Runs": item["run_count"], "Metric": metric}
+                for top_k in TOP_KS:
+                    row[f"@{top_k} Mean"] = item[f"{metric}@{top_k}_mean"]
+                    row[f"@{top_k} Std"] = item[f"{metric}@{top_k}_std"]
+                row["Ep_sim@10 Mean"] = item["Ep_sim@10_mean"] if metric == "NOV" else ""
+                row["Ep_sim@10 Std"] = item["Ep_sim@10_std"] if metric == "NOV" else ""
+                writer.writerow(row)
 
 
-def write_paper_avg_markdown(dataset, summary, metadata, path):
+def write_paper_metrics_markdown(dataset, summary, metadata, path):
     lines = [
-        f"# {dataset} paper-style Avg summary",
+        f"# {dataset} paper-style per-K metrics",
         "",
-        "Weighted Avg is calculated inside each seed before cross-seed aggregation.",
-        "",
-        "- K: `10, 15, 20, 30, 50, 75, 100`",
-        "- Weights: `0.05, 0.05, 0.05, 0.10, 0.15, 0.25, 0.35`",
-        "- Seeded models: Mean and sample Std over the available seeds.",
-        "- Deterministic baselines: Mean is reported and Std is left blank.",
-        "- Runtime: report the complete seed with the largest total of training, uncached inference, and metric-evaluation time; no runtime mean or Std is calculated.",
+        "- K: `10, 20, 30, 40, 50, 60, 70, 80, 90, 100`",
+        "- Seeded models: mean and sample Std over available seeds.",
+        "- Deterministic baselines: mean is reported and Std is blank.",
         f"- Replaced rows: {metadata['replacement_count']}.",
         "",
     ]
-    headers = [
-        "Model",
-        "Runs",
-        "ACC-Avg Mean",
-        "ACC-Avg Std",
-        "NOV-Avg Mean",
-        "NOV-Avg Std",
-        "Ep_sim@10 Mean",
-        "Ep_sim@10 Std",
-        "Max-Time Seed",
-        "Training Seconds",
-        "Inference Seconds",
-        "Evaluation Seconds",
-        "Total Seconds",
-    ]
-    table_rows = []
-    for item in summary:
-        table_rows.append(
-            [
-                item["model"],
-                item["run_count"],
-                f"{item['ACC-Avg_mean']:.6f}",
-                "" if item["ACC-Avg_std"] is None else f"{item['ACC-Avg_std']:.6f}",
-                f"{item['NOV-Avg_mean']:.6f}",
-                "" if item["NOV-Avg_std"] is None else f"{item['NOV-Avg_std']:.6f}",
-                f"{item['Ep_sim@10_mean']:.6f}",
-                "" if item["Ep_sim@10_std"] is None else f"{item['Ep_sim@10_std']:.6f}",
-                item["max_time_seed"] if item["max_time_seed"] is not None else "",
-                _format_optional(item["max_training_seconds"]),
-                _format_optional(item["max_inference_seconds"]),
-                _format_optional(item["max_evaluation_seconds"]),
-                _format_optional(item["max_total_seconds"]),
-            ]
-        )
-    lines.extend(_markdown_table(headers, table_rows, range(1, len(headers))))
-    path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+    for metric in ("ACC", "NOV"):
+        headers = ["Model", "Runs"] + [f"@{top_k}" for top_k in TOP_KS]
+        if metric == "NOV":
+            headers.append("Ep_sim@10")
+        rows = []
+        for item in summary:
+            row = [item["model"], item["run_count"]]
+            row.extend(
+                _format_summary(item[f"{metric}@{top_k}_mean"], item[f"{metric}@{top_k}_std"])
+                for top_k in TOP_KS
+            )
+            if metric == "NOV":
+                row.append(_format_summary(item["Ep_sim@10_mean"], item["Ep_sim@10_std"]))
+            rows.append(row)
+        lines.extend([f"## {metric}", "", _markdown_table(headers, rows, range(1, len(headers))), ""])
+    path.write_text("\n".join(lines), encoding="utf-8")
 
 
 def write_report(dataset, rows, summary, metadata, output_dir):
@@ -601,8 +526,8 @@ def write_report(dataset, rows, summary, metadata, output_dir):
     summary_path = output_dir / "model_mean_std.csv"
     json_path = output_dir / "dataset_metrics.json"
     markdown_path = output_dir / "dataset_metrics.md"
-    paper_csv_path = output_dir / "paper_avg_table.csv"
-    paper_markdown_path = output_dir / "paper_avg_table.md"
+    paper_csv_path = output_dir / "paper_metrics_table.csv"
+    paper_markdown_path = output_dir / "paper_metrics_table.md"
 
     _write_csv(per_seed_path, rows, _per_seed_fieldnames())
     _write_csv(summary_path, summary, _summary_fieldnames())
@@ -622,8 +547,8 @@ def write_report(dataset, rows, summary, metadata, output_dir):
         encoding="utf-8",
     )
     write_markdown_report(dataset, rows, summary, metadata, markdown_path)
-    write_paper_avg_csv(summary, paper_csv_path)
-    write_paper_avg_markdown(dataset, summary, metadata, paper_markdown_path)
+    write_paper_metrics_csv(summary, paper_csv_path)
+    write_paper_metrics_markdown(dataset, summary, metadata, paper_markdown_path)
     return [
         per_seed_path,
         summary_path,

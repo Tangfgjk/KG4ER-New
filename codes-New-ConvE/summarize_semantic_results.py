@@ -21,29 +21,10 @@ from semantic_experiment_utils import (
 )
 
 
-AVG_WEIGHTS = {
-    10: 0.05,
-    15: 0.05,
-    20: 0.05,
-    30: 0.10,
-    50: 0.15,
-    75: 0.25,
-    100: 0.35,
-}
-
-
 def maybe_read_json(path: Path) -> Dict[str, Any]:
     if not path.exists():
         return {}
     return read_json(path)
-
-
-def weighted_avg(values: Dict[int, float]) -> float | None:
-    present = [k for k in AVG_WEIGHTS if k in values]
-    if not present:
-        return None
-    weight_sum = sum(AVG_WEIGHTS[k] for k in present)
-    return sum(values[k] * AVG_WEIGHTS[k] for k in present) / weight_sum
 
 
 def sample_std(values: List[float]) -> float | None:
@@ -75,19 +56,11 @@ def collect_seed(run_dir: Path, seed: int, top_ks: List[int], ablation: str = "f
         "inference_seconds": inference_metrics.get("inference_seconds"),
         "Ep_sim@10": eval_metrics.get("Ep_sim", {}).get("mean"),
     }
-    acc_values: Dict[int, float] = {}
-    nov_values: Dict[int, float] = {}
     for top_k in top_ks:
         acc = metric_value(eval_metrics, "ACC", top_k)
         nov = metric_value(eval_metrics, "NOV", top_k)
         row[f"ACC@{top_k}"] = acc
         row[f"NOV@{top_k}"] = nov
-        if acc is not None:
-            acc_values[top_k] = acc
-        if nov is not None:
-            nov_values[top_k] = nov
-    row["ACC-Avg"] = weighted_avg(acc_values)
-    row["NOV-Avg"] = weighted_avg(nov_values)
     return row
 
 
@@ -150,7 +123,7 @@ def summarize_gate_rows(rows: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
 
 
 def summarize_rows(rows: List[Dict[str, Any]], top_ks: List[int]) -> Dict[str, Any]:
-    fields = [f"ACC@{k}" for k in top_ks] + ["ACC-Avg"] + [f"NOV@{k}" for k in top_ks] + ["NOV-Avg", "Ep_sim@10", "training_seconds", "inference_seconds"]
+    fields = [f"ACC@{k}" for k in top_ks] + [f"NOV@{k}" for k in top_ks] + ["Ep_sim@10", "training_seconds", "inference_seconds"]
     summary: Dict[str, Any] = {"runs": len(rows)}
     for field in fields:
         values = [float(row[field]) for row in rows if row.get(field) is not None]
@@ -176,31 +149,13 @@ def fmt(value: Any) -> str:
 
 
 def write_paper_table(path: Path, dataset: str, summaries: Dict[str, Dict[str, Any]], top_ks: List[int]) -> None:
-    headers = ["Dataset", "Model", "Runs", "ACC-Avg Mean", "ACC-Avg Std", "NOV-Avg Mean", "NOV-Avg Std", "Ep_sim@10 Mean"]
     lines = [
         f"# {dataset} SemanticConvE Summary",
         "",
-        "| " + " | ".join(headers) + " |",
-        "| " + " | ".join(["---"] * len(headers)) + " |",
     ]
-    for ablation, summary in summaries.items():
-        row = [
-            dataset,
-            ablation_model_dir(ablation),
-            str(summary["runs"]),
-            fmt(summary.get("ACC-Avg_mean")),
-            fmt(summary.get("ACC-Avg_std")),
-            fmt(summary.get("NOV-Avg_mean")),
-            fmt(summary.get("NOV-Avg_std")),
-            fmt(summary.get("Ep_sim@10_mean")),
-        ]
-        lines.append("| " + " | ".join(row) + " |")
     lines.extend(
         [
-            "",
-            "Weighted Avg uses weights `0.05, 0.05, 0.05, 0.10, 0.15, 0.25, 0.35` for K=`10,15,20,30,50,75,100`.",
-            "",
-            "## Full Metrics",
+            "## Metrics By Recommendation Length",
             "",
         ]
     )
@@ -219,24 +174,23 @@ def write_paper_table(path: Path, dataset: str, summaries: Dict[str, Dict[str, A
     path.write_text("\n".join(lines), encoding="utf-8")
 
 
-def write_paper_table_csv(path: Path, dataset: str, summaries: Dict[str, Dict[str, Any]]) -> None:
+def write_paper_table_csv(path: Path, dataset: str, summaries: Dict[str, Dict[str, Any]], top_ks: List[int]) -> None:
     rows = []
     for ablation, summary in summaries.items():
-        rows.append(
-            {
-            "Dataset": dataset,
-            "Model": ablation_model_dir(ablation),
-            "Ablation": ablation,
-            "Runs": summary["runs"],
-            "ACC-Avg Mean": summary.get("ACC-Avg_mean"),
-            "ACC-Avg Std": summary.get("ACC-Avg_std"),
-            "NOV-Avg Mean": summary.get("NOV-Avg_mean"),
-            "NOV-Avg Std": summary.get("NOV-Avg_std"),
-            "Ep_sim@10 Mean": summary.get("Ep_sim@10_mean"),
-            "Training Seconds Mean": summary.get("training_seconds_mean"),
-            "Inference Seconds Mean": summary.get("inference_seconds_mean"),
+        for metric in ("ACC", "NOV"):
+            row: Dict[str, Any] = {
+                "Dataset": dataset,
+                "Model": ablation_model_dir(ablation),
+                "Ablation": ablation,
+                "Runs": summary["runs"],
+                "Metric": metric,
             }
-        )
+            for top_k in top_ks:
+                row[f"@{top_k} Mean"] = summary.get(f"{metric}@{top_k}_mean")
+                row[f"@{top_k} Std"] = summary.get(f"{metric}@{top_k}_std")
+            rows.append(row)
+    if not rows:
+        return
     write_csv(path, rows, list(rows[0].keys()))
 
 
@@ -279,7 +233,7 @@ def main() -> None:
         for ablation in ablations
         if any(row["ablation"] == ablation for row in rows)
     }
-    fields = ["ablation", "model", "seed", "seed_dir"] + [f"ACC@{k}" for k in top_ks] + ["ACC-Avg"] + [f"NOV@{k}" for k in top_ks] + ["NOV-Avg", "Ep_sim@10", "training_seconds", "inference_seconds"]
+    fields = ["ablation", "model", "seed", "seed_dir"] + [f"ACC@{k}" for k in top_ks] + [f"NOV@{k}" for k in top_ks] + ["Ep_sim@10", "training_seconds", "inference_seconds"]
     write_csv(output_dir / "per_seed_metrics.csv", rows, fields)
 
     gate_rows = collect_gate_rows(run_dir, seeds, ablations)
@@ -322,7 +276,7 @@ def main() -> None:
         },
     )
     write_paper_table(output_dir / "paper_table.md", args.dataset, summaries, top_ks)
-    write_paper_table_csv(output_dir / "paper_table.csv", args.dataset, summaries)
+    write_paper_table_csv(output_dir / "paper_table.csv", args.dataset, summaries, top_ks)
     print(f"summary written to {output_dir}")
 
 

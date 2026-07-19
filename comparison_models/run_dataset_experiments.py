@@ -96,7 +96,7 @@ def parse_args(argv=None):
     parser.add_argument("--kge-gamma", type=float, default=12.0)
     parser.add_argument("--kge-learning-rate", type=float, default=0.001)
     parser.add_argument("--cpu-num", type=int, default=10)
-    parser.add_argument("--top-ks", default="10,15,20,30,50,75,100")
+    parser.add_argument("--top-ks", default="10,20,30,40,50,60,70,80,90,100")
     parser.add_argument("--ep-top-k", type=int, default=10)
     parser.add_argument("--target-mastery", type=float, default=0.8)
     parser.add_argument("--models", default="all", help="all or comma-separated experiment names.")
@@ -393,6 +393,7 @@ def run_traditional_baselines(args, batch_dir, data_dir, selected):
     run_dir.mkdir(parents=True, exist_ok=True)
     methods = [method for method in TRADITIONAL_BASELINES if wanted(method, selected)]
     update_task(batch_dir, task_id, "running", run_dir=str(run_dir), experiment=task_id, methods=methods)
+    raw_dir = data_dir.parent / "raw"
     sequence_file = sequence_interaction_file(data_dir)
     command = [
         sys.executable,
@@ -410,7 +411,9 @@ def run_traditional_baselines(args, batch_dir, data_dir, selected):
         "--timing-file",
         str(run_dir / "timing.json"),
     ]
-    if sequence_file is not None:
+    if raw_dir.exists():
+        command.extend(["--raw-dir", str(raw_dir)])
+    elif sequence_file is not None:
         command.extend(["--sequence-file", str(sequence_file)])
     rc = run_command(command, CODE_DIR, run_dir / "baseline.log", args.dry_run)
     if rc != 0:

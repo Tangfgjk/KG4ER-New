@@ -5,6 +5,7 @@ import pickle
 from pathlib import Path
 
 import numpy as np
+from sklearn.neighbors import NearestNeighbors
 
 
 SUPPORTED_BASELINES = ["EB-CF", "SB-CF", "CBF", "KCP-ER"]
@@ -56,6 +57,55 @@ def load_sequence_interactions(sequence_file):
     return interactions
 
 
+def load_cf_protocol(raw_dir):
+    """Load a split-safe collaborative-filtering library from canonical raw data.
+
+    Training learners form the neighbour/item-similarity library.  Test learners
+    are retained only as recommendation queries, so they never become candidate
+    neighbours or contribute to item-item statistics.
+    """
+    raw_dir = Path(raw_dir)
+    split_path = raw_dir / "student_split.csv"
+    interactions_path = raw_dir / "interactions_all.csv"
+    if not split_path.exists() or not interactions_path.exists():
+        raise FileNotFoundError(
+            "Split-safe CF requires raw/student_split.csv and raw/interactions_all.csv "
+            f"under {raw_dir}"
+        )
+
+    split_by_uid = {}
+    with split_path.open("r", encoding="utf-8", newline="") as fp:
+        for row in csv.DictReader(fp):
+            split_by_uid[f"uid{int(row['uid'])}"] = str(row["split"]).strip().lower()
+
+    train_interactions = {}
+    query_interactions = {}
+    with interactions_path.open("r", encoding="utf-8", newline="") as fp:
+        for row in csv.DictReader(fp):
+            uid = f"uid{int(row['uid'])}"
+            split = split_by_uid.get(uid, str(row.get("split", "")).strip().lower())
+            question = int(row["question"])
+            response = int(row["response"])
+            if response not in (0, 1):
+                continue
+            if split == "train":
+                train_interactions.setdefault(uid, []).append((question, response))
+            elif split == "test":
+                query_interactions.setdefault(uid, []).append((question, response))
+
+    test_user_ids = sorted(
+        [uid for uid, split in split_by_uid.items() if split == "test"],
+        key=_uid_sort_key,
+    )
+    for uid in test_user_ids:
+        query_interactions.setdefault(uid, [])
+    if not train_interactions or not test_user_ids:
+        raise ValueError(
+            f"CF protocol is empty: train_users={len(train_interactions)}, test_users={len(test_user_ids)}"
+        )
+    return train_interactions, query_interactions, test_user_ids
+
+
 def _cosine(left, right):
     left = np.asarray(left, dtype=float)
     right = np.asarray(right, dtype=float)
@@ -63,6 +113,10 @@ def _cosine(left, right):
     if denom == 0:
         return 0.0
     return float(np.dot(left, right) / denom)
+
+
+def _uid_sort_key(uid):
+    return int(uid[3:]) if str(uid).startswith("uid") and str(uid)[3:].isdigit() else str(uid)
 
 
 def _row_normalize(matrix):
@@ -123,66 +177,117 @@ def kcp_er_scores(q_matrix, mastery, forgetting=None, target_mastery=0.8, forget
     return normalize_scores(scores)
 
 
-def _exercise_popularity(interactions, exercise_count):
-    positives = np.zeros(exercise_count, dtype=float)
-    totals = np.zeros(exercise_count, dtype=float)
-    for pairs in interactions.values():
-        for exercise_idx, response in pairs:
+def _interaction_matrices(interactions, exercise_count):
+    """Return correctness, signed-rating, and observation matrices by learner."""
+    user_ids = sorted(interactions, key=_uid_sort_key)
+    correctness_sum = np.zeros((len(user_ids), exercise_count), dtype=float)
+    observation_count = np.zeros((len(user_ids), exercise_count), dtype=float)
+    for row_index, uid in enumerate(user_ids):
+        for exercise_idx, response in interactions[uid]:
             if 0 <= exercise_idx < exercise_count:
-                totals[exercise_idx] += 1
-                positives[exercise_idx] += 1 if response == 1 else 0
-    with np.errstate(divide="ignore", invalid="ignore"):
-        popularity = np.divide(positives, totals, out=np.zeros_like(positives), where=totals > 0)
-    return popularity.tolist()
+                correctness_sum[row_index, exercise_idx] += float(response)
+                observation_count[row_index, exercise_idx] += 1.0
+    correctness = np.divide(
+        correctness_sum,
+        observation_count,
+        out=np.zeros_like(correctness_sum),
+        where=observation_count > 0,
+    )
+    signed = np.where(observation_count > 0, correctness * 2.0 - 1.0, 0.0)
+    return user_ids, correctness, signed, observation_count
 
 
-def exercise_based_cf_scores(q_matrix, interactions, user_ids=None):
+def _profile_vector(pairs, exercise_count):
+    response_sum = np.zeros(exercise_count, dtype=float)
+    count = np.zeros(exercise_count, dtype=float)
+    for exercise_idx, response in pairs:
+        if 0 <= exercise_idx < exercise_count:
+            response_sum[exercise_idx] += float(response)
+            count[exercise_idx] += 1.0
+    correctness = np.divide(response_sum, count, out=np.zeros_like(response_sum), where=count > 0)
+    signed = np.where(count > 0, correctness * 2.0 - 1.0, 0.0)
+    return correctness, signed, count
+
+
+def _exercise_popularity(correctness, observation_count):
+    total_correct = correctness * observation_count
+    return np.divide(
+        total_correct.sum(axis=0),
+        observation_count.sum(axis=0),
+        out=np.zeros(correctness.shape[1], dtype=float),
+        where=observation_count.sum(axis=0) > 0,
+    )
+
+
+def _top_k_similarity_matrix(vectors, neighbor_count):
+    count = len(vectors)
+    if count == 0:
+        return np.zeros((0, 0), dtype=float)
+    if count == 1:
+        return np.zeros((1, 1), dtype=float)
+    neighbor_count = min(max(1, neighbor_count), count - 1)
+    knn = NearestNeighbors(n_neighbors=neighbor_count + 1, metric="cosine", algorithm="brute")
+    knn.fit(vectors)
+    distances, indices = knn.kneighbors(vectors)
+    similarity = np.zeros((count, count), dtype=float)
+    for row_index, (row_distances, row_indices) in enumerate(zip(distances, indices)):
+        for distance, column_index in zip(row_distances, row_indices):
+            if row_index != column_index:
+                similarity[row_index, column_index] = max(0.0, 1.0 - float(distance))
+    return similarity
+
+
+def exercise_based_cf_scores(q_matrix, interactions, user_ids=None, query_interactions=None, neighbor_count=20):
+    """ItemKNN with train-only item statistics and test-user query histories."""
     exercise_count = len(q_matrix)
-    user_ids = user_ids or sorted(interactions.keys())
-    popularity = _exercise_popularity(interactions, exercise_count)
-    q_array = _row_normalize(q_matrix)
-    popularity_array = np.asarray(popularity, dtype=float)
+    query_interactions = query_interactions if query_interactions is not None else interactions
+    user_ids = user_ids or sorted(query_interactions, key=_uid_sort_key)
+    _, correctness, signed, observation_count = _interaction_matrices(interactions, exercise_count)
+    popularity = _exercise_popularity(correctness, observation_count)
+    item_similarity = _top_k_similarity_matrix(signed.T, neighbor_count)
     uid_ex_scores = []
     for uid in user_ids:
-        positives = [exercise_idx for exercise_idx, response in interactions.get(uid, []) if response == 1]
-        positives = [idx for idx in positives if 0 <= idx < exercise_count]
-        if positives:
-            profile = np.mean(q_array[positives], axis=0)
-            scores = 0.8 * np.matmul(q_array, profile) + 0.2 * popularity_array
+        _, profile, observed = _profile_vector(query_interactions.get(uid, []), exercise_count)
+        if np.any(observed > 0):
+            scores = np.matmul(profile, item_similarity)
         else:
-            scores = popularity_array
+            scores = popularity
         uid_ex_scores.append((uid, normalize_scores(scores.tolist())))
     return uid_ex_scores
 
 
-def student_based_cf_scores(q_matrix, mastery, interactions, user_ids=None, neighbor_count=20):
+def student_based_cf_scores(
+    q_matrix,
+    mastery,
+    interactions,
+    user_ids=None,
+    neighbor_count=20,
+    query_interactions=None,
+):
+    """UserKNN with train learners as the only neighbours for test queries."""
     exercise_count = len(q_matrix)
-    user_ids = user_ids or [f"uid{i}" for i in range(len(mastery))]
-    mastery_by_uid = {uid: np.asarray(mastery[idx], dtype=float) for idx, uid in enumerate(user_ids)}
-    popularity = _exercise_popularity(interactions, exercise_count)
+    _ = mastery  # Kept in the signature for backwards compatibility with existing callers.
+    query_interactions = query_interactions if query_interactions is not None else interactions
+    user_ids = user_ids or sorted(query_interactions, key=_uid_sort_key)
+    _, correctness, signed, observation_count = _interaction_matrices(interactions, exercise_count)
+    popularity = _exercise_popularity(correctness, observation_count)
+    train_count = signed.shape[0]
+    knn = NearestNeighbors(n_neighbors=min(max(1, neighbor_count), train_count), metric="cosine", algorithm="brute")
+    knn.fit(signed)
     uid_ex_scores = []
 
     for uid in user_ids:
-        source_mastery = mastery_by_uid[uid]
-        neighbors = []
-        for other_uid in user_ids:
-            if other_uid == uid:
-                continue
-            sim = _cosine(source_mastery, mastery_by_uid[other_uid])
-            neighbors.append((other_uid, sim))
-        neighbors = sorted(neighbors, key=lambda item: item[1], reverse=True)[:neighbor_count]
-
-        numerator = np.zeros(exercise_count, dtype=float)
-        denominator = np.zeros(exercise_count, dtype=float)
-        for other_uid, sim in neighbors:
-            if sim <= 0:
-                continue
-            for exercise_idx, response in interactions.get(other_uid, []):
-                if 0 <= exercise_idx < exercise_count:
-                    numerator[exercise_idx] += sim * response
-                    denominator[exercise_idx] += abs(sim)
-        neighbor_scores = numerator
-        scores = neighbor_scores + 0.2 * np.asarray(popularity)
+        _, query_signed, observed = _profile_vector(query_interactions.get(uid, []), exercise_count)
+        if not np.any(observed > 0):
+            uid_ex_scores.append((uid, normalize_scores(popularity.tolist())))
+            continue
+        distances, indices = knn.kneighbors(query_signed.reshape(1, -1))
+        weights = np.maximum(0.0, 1.0 - distances[0])
+        selected_correctness = correctness[indices[0]]
+        selected_observed = observation_count[indices[0]]
+        numerator = np.sum(weights[:, None] * selected_correctness * selected_observed, axis=0)
+        denominator = np.sum(weights[:, None] * selected_observed, axis=0)
+        scores = np.divide(numerator, denominator, out=popularity.copy(), where=denominator > 0)
         uid_ex_scores.append((uid, normalize_scores(scores.tolist())))
     return uid_ex_scores
 
@@ -193,8 +298,10 @@ def build_all_baseline_scores(
     sequence,
     forgetting,
     interactions=None,
+    query_interactions=None,
     methods=None,
     user_ids=None,
+    neighbor_count=20,
 ):
     methods = methods or SUPPORTED_BASELINES
     interactions = interactions or {}
@@ -203,9 +310,22 @@ def build_all_baseline_scores(
 
     for method in methods:
         if method == "EB-CF":
-            all_scores[method] = exercise_based_cf_scores(q_matrix, interactions, user_ids=user_ids)
+            all_scores[method] = exercise_based_cf_scores(
+                q_matrix,
+                interactions,
+                user_ids=user_ids,
+                query_interactions=query_interactions,
+                neighbor_count=neighbor_count,
+            )
         elif method == "SB-CF":
-            all_scores[method] = student_based_cf_scores(q_matrix, mastery, interactions, user_ids=user_ids)
+            all_scores[method] = student_based_cf_scores(
+                q_matrix,
+                mastery,
+                interactions,
+                user_ids=user_ids,
+                query_interactions=query_interactions,
+                neighbor_count=neighbor_count,
+            )
         elif method == "CBF":
             all_scores[method] = [
                 (
@@ -217,7 +337,8 @@ def build_all_baseline_scores(
                         forgetting[idx] if forgetting else None,
                     ),
                 )
-                for idx, uid in enumerate(user_ids)
+                for uid in user_ids
+                for idx in [int(uid[3:])]
             ]
         elif method == "KCP-ER":
             all_scores[method] = [
@@ -229,7 +350,8 @@ def build_all_baseline_scores(
                         forgetting[idx] if forgetting else None,
                     ),
                 )
-                for idx, uid in enumerate(user_ids)
+                for uid in user_ids
+                for idx in [int(uid[3:])]
             ]
         else:
             raise ValueError(f"Unsupported baseline: {method}")

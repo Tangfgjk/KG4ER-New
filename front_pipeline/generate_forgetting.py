@@ -128,7 +128,10 @@ def main() -> None:
 
     delta_arr = np.asarray(all_deltas, dtype=np.float64)
     theta, theta_source = parse_theta(args.theta, delta_arr, args.calibration_quantile, args.calibration_target)
-    know_forget = np.ones((raw.student_count, raw.concept_count), dtype=np.float64)
+    # Forgetting is defined only after an observed exposure. An unseen concept
+    # therefore starts with zero temporal forgetting rather than being treated
+    # as fully forgotten.
+    know_forget = np.zeros((raw.student_count, raw.concept_count), dtype=np.float64)
     for uid, last_seen in enumerate(last_seen_by_uid):
         observed = np.isfinite(last_seen)
         if not observed.any():
@@ -160,7 +163,7 @@ def main() -> None:
                 "target_forgetting": args.calibration_target if theta_source == "auto_quantile" else None,
                 "positive_interval_quantile": float(np.quantile(positive_deltas, args.calibration_quantile)) if theta_source == "auto_quantile" else None,
             },
-            "unseen_concept_value": 1.0,
+            "unseen_concept_value": 0.0,
             "exercise_aggregation": "mean forgetting over Q-linked concepts",
             "elapsed_intervals": matrix_stats(delta_arr),
             "positive_elapsed_intervals": matrix_stats(positive_deltas),

@@ -30,6 +30,8 @@ class SemanticSummaryTest(unittest.TestCase):
             self.assertEqual(row["ACC@10"], 0.7)
             self.assertEqual(row["NOV@10"], 0.9)
             self.assertEqual(row["training_seconds"], 12.5)
+            self.assertNotIn("ACC-Avg", row)
+            self.assertNotIn("NOV-Avg", row)
 
     def test_collects_gate_values_per_seed_and_summarizes(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

@@ -6,6 +6,7 @@ from pathlib import Path
 from baseline_recommenders import (
     SUPPORTED_BASELINES,
     build_all_baseline_scores,
+    load_cf_protocol,
     load_json_matrix,
     load_q_matrix,
     load_sequence_interactions,
@@ -20,6 +21,16 @@ def parse_args():
     default_data_dir = Path(__file__).resolve().parents[1] / "data" / "Eedi"
     parser.add_argument("--data-dir", type=Path, default=default_data_dir)
     parser.add_argument("--sequence-file", type=Path, default=None)
+    parser.add_argument(
+        "--raw-dir",
+        type=Path,
+        default=None,
+        help=(
+            "Canonical raw dataset directory containing student_split.csv and "
+            "interactions_all.csv. Enables split-safe ItemKNN/UserKNN baselines."
+        ),
+    )
+    parser.add_argument("--cf-neighbor-count", type=int, default=20)
     parser.add_argument("--output-dir", type=Path, default=None)
     parser.add_argument("--run-root", type=Path, default=None)
     parser.add_argument("--run-id", default=None)
@@ -52,8 +63,23 @@ def main():
     output_dir = output_dir or args.data_dir / "baseline_outputs"
     timing_file = args.timing_file or output_dir.parent / "timing.json"
     q_matrix, mastery, sequence, forgetting = _load_required_inputs(args.data_dir)
-    user_ids = [f"uid{idx}" for idx in range(len(mastery))]
-    interactions = load_sequence_interactions(args.sequence_file)
+    if args.raw_dir is not None:
+        interactions, query_interactions, user_ids = load_cf_protocol(args.raw_dir)
+        cf_protocol = {
+            "mode": "split_safe_knn",
+            "raw_dir": str(args.raw_dir),
+            "library": "outer_train_learners_only",
+            "queries": "outer_test_learners_observed_history_only",
+            "neighbor_count": args.cf_neighbor_count,
+        }
+    else:
+        interactions = load_sequence_interactions(args.sequence_file)
+        query_interactions = interactions
+        user_ids = [f"uid{idx}" for idx in range(len(mastery))]
+        cf_protocol = {
+            "mode": "legacy_sequence_file",
+            "sequence_file": str(args.sequence_file) if args.sequence_file else None,
+        }
 
     inference_start = time.perf_counter()
     all_scores = build_all_baseline_scores(
@@ -62,8 +88,10 @@ def main():
         sequence=sequence,
         forgetting=forgetting,
         interactions=interactions,
+        query_interactions=query_interactions,
         methods=methods,
         user_ids=user_ids,
+        neighbor_count=args.cf_neighbor_count,
     )
     update_timing(timing_file, "inference_without_cache", time.perf_counter() - inference_start, extra={"methods": methods})
 
@@ -87,7 +115,9 @@ def main():
         metrics[f"{method}_ep_sim_std"] = ep_result["std"]
         print(f"{method}: scores -> {score_path}; Ep_sim -> {ep_path}")
     update_timing(timing_file, "evaluation_metric", time.perf_counter() - metric_start, extra={"methods": methods})
+    metrics["cf_protocol"] = cf_protocol
     write_json(metrics, output_dir.parent / "metrics.json")
+    write_json(cf_protocol, output_dir.parent / "cf_protocol.json")
 
 
 if __name__ == "__main__":
