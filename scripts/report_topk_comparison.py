@@ -93,20 +93,45 @@ def write_markdown(rows: list[dict], path: Path) -> None:
 
 
 def plot(rows: list[dict], path: Path) -> None:
-    series = sorted({(row["group"], row["model"]) for row in rows})
-    palette = plt.get_cmap("tab20").colors
+    def model_key(model: str) -> str:
+        if model == "SemanticConvE":
+            return "full"
+        return model.replace("SemanticConvE_", "")
+
+    semantic_order = ("full", "id_only", "no_learner_id", "no_learner_relation_id", "feature_only")
+    model_colors = {
+        "TransE": "#111111",
+        "TransE-adv": "#6A6A6A",
+        "full": "#0072B2",
+        "id_only": "#E69F00",
+        "no_learner_id": "#D55E00",
+        "no_learner_relation_id": "#CC79A7",
+        "feature_only": "#009E73",
+    }
     style_by_group = {
-        "Comparison": ("-", "o", "Cmp"),
-        "SemanticConvE include-test": ("-", "^", "Inc"),
-        "SemanticConvE exclude-test": ("--", "s", "Exc"),
+        "Comparison": ("-", "o"),
+        "SemanticConvE include-test": ("-", "^"),
+        "SemanticConvE exclude-test": ("--", "s"),
     }
 
     def series_label(group: str, model: str) -> str:
-        _, _, prefix = style_by_group.get(group, ("-", "D", group))
-        short_model = model.replace("SemanticConvE_", "").replace("SemanticConvE", "full")
-        return f"{prefix}: {short_model}"
+        key = model_key(model)
+        if group == "SemanticConvE include-test":
+            return f"{key} (with test edges)"
+        if group == "SemanticConvE exclude-test":
+            return f"{key} (without test edges)"
+        return model
 
-    color_by_series = {key: palette[index % len(palette)] for index, key in enumerate(series)}
+    group_order = {"Comparison": 0, "SemanticConvE include-test": 1, "SemanticConvE exclude-test": 2}
+    series = sorted(
+        {(row["group"], row["model"]) for row in rows},
+        key=lambda item: (
+            0 if item[0] == "Comparison" else 1,
+            semantic_order.index(model_key(item[1])) if model_key(item[1]) in semantic_order else len(semantic_order),
+            group_order.get(item[0], 99),
+            item[1],
+        ),
+    )
     figure, axes = plt.subplots(1, 2, figsize=(19, 7), dpi=180)
     for axis, metric in zip(axes, METRICS):
         metric_rows = [row for row in rows if row["metric"] == metric]
@@ -116,11 +141,11 @@ def plot(rows: list[dict], path: Path) -> None:
             ys = [values[k] for k in xs]
             if not xs:
                 continue
-            linestyle, marker, _ = style_by_group.get(group, ("-", "D", group))
+            linestyle, marker = style_by_group.get(group, ("-", "D"))
             axis.plot(
                 xs,
                 ys,
-                color=color_by_series[(group, model)],
+                color=model_colors.get(model_key(model), "#444444"),
                 linestyle=linestyle,
                 marker=marker,
                 linewidth=2.0,
