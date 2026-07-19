@@ -226,6 +226,47 @@ class SemanticConvECompactConcatTest(unittest.TestCase):
         self.assertNotIn("entity_id_200", values["entity_features"]["ex"])
         self.assertNotIn("relation_id_200", values["relation_features"])
 
+    def test_feature_only_relation_id_uses_only_relation_id(self) -> None:
+        model_a = self.build_model()
+        model_b = self.build_model()
+        model_a.ablation_mode = "feature_only_relation_id"
+        model_b.ablation_mode = "feature_only_relation_id"
+        model_a.eval()
+        model_b.eval()
+        with torch.no_grad():
+            model_b.relation_type_ids.fill_(RELATION_TYPE_TO_ID["pkc"])
+            model_b.relation_strengths.fill_(0.01)
+
+        relation_ids = torch.tensor([0, 1], dtype=torch.long)
+        self.assertTrue(torch.allclose(model_a.relation_embedding(relation_ids), model_b.relation_embedding(relation_ids), atol=1e-6))
+
+    def test_feature_only_learner_id_uses_only_learner_id(self) -> None:
+        model_a = self.build_model()
+        model_b = self.build_model()
+        model_a.ablation_mode = "feature_only_learner_id"
+        model_b.ablation_mode = "feature_only_learner_id"
+        model_a.eval()
+        model_b.eval()
+        with torch.no_grad():
+            model_b.numeric_features[0, 0] = 0.99
+
+        learner_id = torch.tensor([0], dtype=torch.long)
+        self.assertTrue(torch.allclose(model_a.entity_embedding(learner_id), model_b.entity_embedding(learner_id), atol=1e-6))
+
+    def test_feature_only_exercise_id_uses_only_exercise_id(self) -> None:
+        model_a = self.build_model()
+        model_b = self.build_model()
+        model_a.ablation_mode = "feature_only_exercise_id"
+        model_b.ablation_mode = "feature_only_exercise_id"
+        model_a.eval()
+        model_b.eval()
+        with torch.no_grad():
+            model_b.text_features[2].fill_(0.95)
+            model_b.numeric_features[2, 1:].fill_(0.99)
+
+        exercise_id = torch.tensor([2], dtype=torch.long)
+        self.assertTrue(torch.allclose(model_a.entity_embedding(exercise_id), model_b.entity_embedding(exercise_id), atol=1e-6))
+
     def test_can_score_tail_pairs_from_external_head_embeddings(self) -> None:
         model = self.build_model(
             entity_type_ids=torch.tensor(

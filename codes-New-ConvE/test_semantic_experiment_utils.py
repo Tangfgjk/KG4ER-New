@@ -91,17 +91,13 @@ class SemanticExperimentUtilsTest(unittest.TestCase):
             [
                 "full",
                 "id_only",
-                "no_learner_id",
-                "no_learner_relation_id",
                 "feature_only",
-                "no_theta",
-                "no_text",
-                "no_exercise_ped",
-                "no_relation_features",
+                "feature_only_relation_id",
+                "feature_only_learner_id",
+                "feature_only_exercise_id",
                 "no_mastery",
                 "no_forgetting",
                 "no_seq",
-                "no_type_aware_scoring",
             ],
         )
 

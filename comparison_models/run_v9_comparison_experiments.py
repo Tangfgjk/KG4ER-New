@@ -44,7 +44,7 @@ def parse_args(argv=None) -> argparse.Namespace:
         default="all",
         help=(
             "all or comma-separated names from "
-            "TransE,TransE-adv,RotatE,DistMult,ComplEx,EB-CF,SB-CF,CBF,KCP-ER"
+            "TransE,TransE-adv,RotatE,DistMult,ComplEx,EB-CF,SB-CF,CBF"
         ),
     )
     parser.add_argument("--kge-max-steps", type=int, default=30000)

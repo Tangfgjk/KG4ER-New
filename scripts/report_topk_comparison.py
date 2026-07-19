@@ -1,4 +1,4 @@
-"""Create a cross-model top-K table and line chart from completed ER runs."""
+"""Create readable split top-K reports from completed ER runs."""
 
 from __future__ import annotations
 
@@ -15,6 +15,40 @@ import matplotlib.pyplot as plt
 METRICS = ("ACC", "NOV")
 TOP_KS = tuple(range(10, 101, 10))
 
+# Fixed colors make the same model recognisable across datasets and figures.
+MODEL_COLORS = {
+    "TransE": "#1F2937",
+    "TransE-adv": "#6B7280",
+    "RotatE": "#A21CAF",
+    "DistMult": "#0F766E",
+    "ComplEx": "#C2410C",
+    "CBF": "#854D0E",
+    "SB-CF": "#BE123C",
+    "EB-CF": "#4F46E5",
+    "full": "#0057B8",
+    "id_only": "#D55E00",
+    "feature_only": "#009E73",
+    "feature_only_relation_id": "#7C3AED",
+    "feature_only_learner_id": "#DC2626",
+    "feature_only_exercise_id": "#0891B2",
+    "no_mastery": "#CA8A04",
+    "no_forgetting": "#9333EA",
+    "no_seq": "#DB2777",
+}
+MODEL_MARKERS = {
+    "TransE": "o", "TransE-adv": "s", "RotatE": "^", "DistMult": "D", "ComplEx": "P",
+    "CBF": "X", "SB-CF": "v", "EB-CF": "<",
+    "full": "o", "id_only": "s", "feature_only": "^", "feature_only_relation_id": "D",
+    "feature_only_learner_id": "P", "feature_only_exercise_id": "X",
+    "no_mastery": "v", "no_forgetting": "<", "no_seq": ">",
+}
+REPRESENTATION_MODELS = (
+    "full", "id_only", "feature_only", "feature_only_relation_id",
+    "feature_only_learner_id", "feature_only_exercise_id",
+)
+COGNITIVE_MODELS = ("full", "no_mastery", "no_forgetting", "no_seq")
+COMPARISON_MODELS = ("full", "TransE", "TransE-adv", "RotatE", "DistMult", "ComplEx", "CBF", "SB-CF", "EB-CF")
+
 
 def parse_run_dir(value: str) -> tuple[str, Path]:
     if "=" not in value:
@@ -25,27 +59,21 @@ def parse_run_dir(value: str) -> tuple[str, Path]:
     return label, Path(raw_path)
 
 
+def model_key(model: str) -> str:
+    return "full" if model == "SemanticConvE" else model.replace("SemanticConvE_", "")
+
+
 def load_rows(label: str, run_dir: Path) -> list[dict]:
     rows: list[dict] = []
     for path in sorted(run_dir.glob("**/eval/metrics.json")):
         payload = json.loads(path.read_text(encoding="utf-8"))
         model = str(payload.get("model", path.parents[2].name))
         for metric in METRICS:
-            values = payload.get(metric, {})
             for top_k in TOP_KS:
-                item = values.get(str(top_k), {})
+                item = payload.get(metric, {}).get(str(top_k), {})
                 value = item.get("mean") if isinstance(item, dict) else None
                 if isinstance(value, (int, float)):
-                    rows.append(
-                        {
-                            "group": label,
-                            "model": model,
-                            "metric": metric,
-                            "top_k": top_k,
-                            "value": float(value),
-                            "source": str(path),
-                        }
-                    )
+                    rows.append({"group": label, "model": model, "metric": metric, "top_k": top_k, "value": float(value)})
     return rows
 
 
@@ -53,20 +81,10 @@ def summarize(rows: list[dict]) -> list[dict]:
     grouped: dict[tuple[str, str, str, int], list[float]] = defaultdict(list)
     for row in rows:
         grouped[(row["group"], row["model"], row["metric"], row["top_k"])].append(row["value"])
-
-    output = []
-    for (group, model, metric, top_k), values in sorted(grouped.items()):
-        output.append(
-            {
-                "group": group,
-                "model": model,
-                "metric": metric,
-                "top_k": top_k,
-                "mean": mean(values),
-                "runs": len(values),
-            }
-        )
-    return output
+    return [
+        {"group": group, "model": model, "metric": metric, "top_k": top_k, "mean": mean(values), "runs": len(values)}
+        for (group, model, metric, top_k), values in sorted(grouped.items())
+    ]
 
 
 def write_csv(rows: list[dict], path: Path) -> None:
@@ -77,7 +95,7 @@ def write_csv(rows: list[dict], path: Path) -> None:
 
 
 def write_markdown(rows: list[dict], path: Path) -> None:
-    lines = ["# Top-K Result Comparison", ""]
+    lines = ["# Top-K Result Comparison", "", "All models use the train graph only; `test_triples.txt` is evaluation-only.", ""]
     for metric in METRICS:
         metric_rows = [row for row in rows if row["metric"] == metric]
         names = sorted({(row["group"], row["model"]) for row in metric_rows})
@@ -86,71 +104,27 @@ def write_markdown(rows: list[dict], path: Path) -> None:
         for group, model in names:
             values = [lookup.get((group, model, k)) for k in TOP_KS]
             runs = max((item["runs"] for item in values if item), default=0)
-            formatted = [f"{item['mean']:.6f}" if item else "" for item in values]
-            lines.append(f"| {group} | {model} | {runs} | " + " | ".join(formatted) + " |")
+            lines.append(f"| {group} | {model} | {runs} | " + " | ".join(f"{item['mean']:.6f}" if item else "" for item in values) + " |")
         lines.append("")
     path.write_text("\n".join(lines), encoding="utf-8")
 
 
-def plot(rows: list[dict], path: Path) -> None:
-    def model_key(model: str) -> str:
-        if model == "SemanticConvE":
-            return "full"
-        return model.replace("SemanticConvE_", "")
-
-    semantic_order = ("full", "id_only", "no_learner_id", "no_learner_relation_id", "feature_only")
-    model_colors = {
-        "TransE": "#111111",
-        "TransE-adv": "#6A6A6A",
-        "full": "#0072B2",
-        "id_only": "#E69F00",
-        "no_learner_id": "#D55E00",
-        "no_learner_relation_id": "#CC79A7",
-        "feature_only": "#009E73",
-    }
-    style_by_group = {
-        "Comparison": ("-", "o"),
-        "SemanticConvE include-test": ("-", "^"),
-        "SemanticConvE exclude-test": ("--", "s"),
-    }
-
-    def series_label(group: str, model: str) -> str:
-        key = model_key(model)
-        if group == "SemanticConvE include-test":
-            return f"{key} (with test edges)"
-        if group == "SemanticConvE exclude-test":
-            return f"{key} (without test edges)"
-        return model
-
-    group_order = {"Comparison": 0, "SemanticConvE include-test": 1, "SemanticConvE exclude-test": 2}
-    series = sorted(
-        {(row["group"], row["model"]) for row in rows},
-        key=lambda item: (
-            0 if item[0] == "Comparison" else 1,
-            semantic_order.index(model_key(item[1])) if model_key(item[1]) in semantic_order else len(semantic_order),
-            group_order.get(item[0], 99),
-            item[1],
-        ),
-    )
-    figure, axes = plt.subplots(1, 2, figsize=(19, 7), dpi=180)
+def plot_category(rows: list[dict], models: tuple[str, ...], title: str, path: Path) -> None:
+    figure, axes = plt.subplots(1, 2, figsize=(16, 6), dpi=220)
     for axis, metric in zip(axes, METRICS):
         metric_rows = [row for row in rows if row["metric"] == metric]
-        for group, model in series:
-            values = {row["top_k"]: row["mean"] for row in metric_rows if row["group"] == group and row["model"] == model}
+        for key in models:
+            candidates = [row for row in metric_rows if model_key(row["model"]) == key]
+            if not candidates:
+                continue
+            values = {row["top_k"]: row["mean"] for row in candidates}
             xs = [k for k in TOP_KS if k in values]
-            ys = [values[k] for k in xs]
             if not xs:
                 continue
-            linestyle, marker = style_by_group.get(group, ("-", "D"))
             axis.plot(
-                xs,
-                ys,
-                color=model_colors.get(model_key(model), "#444444"),
-                linestyle=linestyle,
-                marker=marker,
-                linewidth=2.0,
-                markersize=4.2,
-                label=series_label(group, model),
+                xs, [values[k] for k in xs], label=key, color=MODEL_COLORS.get(key, "#111827"),
+                marker=MODEL_MARKERS.get(key, "o"), linewidth=3.0 if key == "full" else 2.0,
+                markersize=6.0 if key == "full" else 4.8,
             )
         axis.set_title(metric, fontsize=14, weight="bold")
         axis.set_xlabel("Recommendation list size N")
@@ -158,18 +132,18 @@ def plot(rows: list[dict], path: Path) -> None:
         axis.set_xticks(TOP_KS)
         axis.grid(alpha=0.25)
     handles, labels = axes[0].get_legend_handles_labels()
-    figure.legend(handles, labels, title="Curve key", fontsize=8, title_fontsize=9, loc="center left", bbox_to_anchor=(0.84, 0.5))
-    figure.subplots_adjust(left=0.06, right=0.82, bottom=0.13, top=0.90, wspace=0.20)
+    figure.legend(handles, labels, title="Model", loc="center left", bbox_to_anchor=(0.84, 0.5), fontsize=8, title_fontsize=9)
+    figure.suptitle(title, fontsize=16, weight="bold")
+    figure.subplots_adjust(left=0.06, right=0.82, bottom=0.14, top=0.86, wspace=0.22)
     figure.savefig(path, bbox_inches="tight", facecolor="white")
     plt.close(figure)
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="Create a table and top-K curves for completed ER runs.")
+    parser = argparse.ArgumentParser(description="Create split tables and readable top-K figures for completed ER runs.")
     parser.add_argument("--run-dir", action="append", required=True, type=parse_run_dir, metavar="LABEL=PATH")
     parser.add_argument("--output-dir", required=True)
     args = parser.parse_args()
-
     rows: list[dict] = []
     for label, run_dir in args.run_dir:
         if not run_dir.is_dir():
@@ -177,13 +151,14 @@ def main() -> None:
         rows.extend(load_rows(label, run_dir))
     if not rows:
         raise ValueError("No eval/metrics.json files were found in the supplied run directories.")
-
     output_dir = Path(args.output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
     summary = summarize(rows)
     write_csv(summary, output_dir / "topk_comparison.csv")
     write_markdown(summary, output_dir / "topk_comparison.md")
-    plot(summary, output_dir / "topk_comparison.png")
+    plot_category(summary, REPRESENTATION_MODELS, "Representation Ablations", output_dir / "topk_representation.png")
+    plot_category(summary, COGNITIVE_MODELS, "Cognitive Relation Ablations", output_dir / "topk_cognitive.png")
+    plot_category(summary, COMPARISON_MODELS, "SemanticConvE vs Baselines", output_dir / "topk_baselines.png")
     print(json.dumps({"output_dir": str(output_dir.resolve()), "metric_rows": len(summary)}, indent=2))
 
 

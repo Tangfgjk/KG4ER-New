@@ -35,7 +35,7 @@ class SemanticAblationDataTest(unittest.TestCase):
                 "kc0\tmlkc0.80\tuid0\n"
                 "kc0\tpkc0.40\tuid0\n"
                 "ex0\texfr0.10\tuid0\n"
-                "uid0\trec\tex0\n",
+                "uid0\trec\tex1\n",
             )
             self.write_text(
                 source / "test_triples.txt",
@@ -59,12 +59,14 @@ class SemanticAblationDataTest(unittest.TestCase):
             train_triples = (target / "triples.txt").read_text(encoding="utf-8")
             test_triples = (target / "test_triples.txt").read_text(encoding="utf-8")
             self.assertEqual(manifest["active_terms"], ["mastery", "sequence"])
+            self.assertEqual(manifest["sequence_term"], "one_minus_cos_sq")
             self.assertNotIn("exfr", train_triples)
             self.assertNotIn("exfr", test_triples)
-            self.assertNotIn("uid0\trec\tex0", train_triples)
-            self.assertIn("uid0\trec\tex1", train_triples)
+            self.assertIn("uid0\trec\tex0", train_triples)
+            self.assertNotIn("uid0\trec\tex1", train_triples)
             self.assertTrue((target / "semantic_kg_features" / "marker.txt").exists())
             self.assertTrue((target / "statics2011_uid_kc_response.txt").exists())
+            self.assertTrue((target / "stu2ex_recommend_full_precision.json").exists())
 
 
 if __name__ == "__main__":

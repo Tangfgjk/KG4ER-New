@@ -21,7 +21,6 @@ PREFERRED_MODEL_ORDER = (
     "EB-CF",
     "SB-CF",
     "CBF",
-    "KCP-ER",
 )
 
 

@@ -12,6 +12,9 @@ It also supports a progressive ID-removal diagnostic sequence:
 * no_learner_id: learner uses theta only;
 * no_learner_relation_id: learner uses theta only and relations use type plus strength only;
 * feature_only: learner, exercise, and relation IDs are removed while KC IDs remain.
+* feature_only_relation_id: feature_only, except relations use relation IDs only.
+* feature_only_learner_id: feature_only, except learners use learner IDs only.
+* feature_only_exercise_id: feature_only, except exercises use exercise IDs only.
 
 The final 200-dimensional entity/relation representations are then consumed by
 the original ConvE scoring module.
@@ -64,6 +67,9 @@ VALID_MODEL_ABLATIONS = {
     "no_learner_id",
     "no_learner_relation_id",
     "feature_only",
+    "feature_only_relation_id",
+    "feature_only_learner_id",
+    "feature_only_exercise_id",
 }
 
 
@@ -283,16 +289,33 @@ class SemanticConvE(nn.Module):
             "no_learner_id",
             "no_learner_relation_id",
             "feature_only",
+            "feature_only_relation_id",
+            "feature_only_exercise_id",
         }
+
+    def _uses_learner_id_only(self) -> bool:
+        return self.ablation_mode == "feature_only_learner_id"
 
     def _removes_relation_id(self) -> bool:
         return self.ablation_mode in {
             "no_learner_relation_id",
             "feature_only",
+            "feature_only_learner_id",
+            "feature_only_exercise_id",
         }
 
+    def _uses_relation_id_only(self) -> bool:
+        return self.ablation_mode == "feature_only_relation_id"
+
     def _removes_exercise_id(self) -> bool:
-        return self.ablation_mode == "feature_only"
+        return self.ablation_mode in {
+            "feature_only",
+            "feature_only_relation_id",
+            "feature_only_learner_id",
+        }
+
+    def _uses_exercise_id_only(self) -> bool:
+        return self.ablation_mode == "feature_only_exercise_id"
 
     def entity_embedding(self, entity_ids: torch.Tensor) -> torch.Tensor:
         id_emb = self.emb_e(entity_ids)
@@ -306,7 +329,9 @@ class SemanticConvE(nn.Module):
         if uid_mask.any():
             uid_ids = entity_ids[uid_mask]
             uid_id_emb = id_emb[uid_mask]
-            if self._removes_learner_id():
+            if self._uses_learner_id_only():
+                fused_emb[uid_mask] = uid_id_emb
+            elif self._removes_learner_id():
                 theta = self._slice_numeric(uid_ids, "learner_irt")
                 fused_emb[uid_mask] = self.uid_feature_only_fusion(theta)
             elif self._uses_theta():
@@ -321,7 +346,9 @@ class SemanticConvE(nn.Module):
             ex_id_emb = id_emb[ex_mask]
             use_text = self._uses_exercise_text()
             use_ped = self._uses_exercise_pedagogy()
-            if self._removes_exercise_id():
+            if self._uses_exercise_id_only():
+                fused_emb[ex_mask] = ex_id_emb
+            elif self._removes_exercise_id():
                 if not (use_text and use_ped):
                     raise ValueError("feature_only requires exercise text and MIRT pedagogical features")
                 fused_emb[ex_mask] = self.exercise_feature_only_fusion(
@@ -351,14 +378,24 @@ class SemanticConvE(nn.Module):
         return self.entity_norm(fused_emb)
 
     def gate_values(self) -> dict[str, object]:
-        uid_features = ["theta_mirt_norm_1"] if self._removes_learner_id() else ["entity_id_200", "theta_mirt_norm_1"]
+        uid_features = (
+            ["entity_id_200"]
+            if self._uses_learner_id_only()
+            else ["theta_mirt_norm_1"]
+            if self._removes_learner_id()
+            else ["entity_id_200", "theta_mirt_norm_1"]
+        )
         exercise_features = (
-            ["topic_v/text_100", "difficulty_mirt_norm_1", "discrimination_mirt_norm_1"]
+            ["entity_id_200"]
+            if self._uses_exercise_id_only()
+            else ["topic_v/text_100", "difficulty_mirt_norm_1", "discrimination_mirt_norm_1"]
             if self._removes_exercise_id()
             else ["entity_id_200", "topic_v/text_100", "difficulty_mirt_norm_1", "discrimination_mirt_norm_1"]
         )
         relation_features = (
-            ["relation_type_16", "relation_strength_1"]
+            ["relation_id_200"]
+            if self._uses_relation_id_only()
+            else ["relation_type_16", "relation_strength_1"]
             if self._removes_relation_id()
             else ["relation_id_200", "relation_type_16", "relation_strength_1"]
         )
@@ -375,7 +412,7 @@ class SemanticConvE(nn.Module):
 
     def relation_embedding(self, relation_ids: torch.Tensor) -> torch.Tensor:
         id_emb = self.relation_id_emb(relation_ids)
-        if not self._uses_relation_features():
+        if self._uses_relation_id_only() or not self._uses_relation_features():
             return self.relation_norm(id_emb)
 
         type_emb = self.relation_type_emb(self.relation_type_ids[relation_ids])

@@ -8,7 +8,7 @@ import numpy as np
 from sklearn.neighbors import NearestNeighbors
 
 
-SUPPORTED_BASELINES = ["EB-CF", "SB-CF", "CBF", "KCP-ER"]
+SUPPORTED_BASELINES = ["EB-CF", "SB-CF", "CBF"]
 
 
 def load_json_matrix(path):

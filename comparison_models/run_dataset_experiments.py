@@ -52,7 +52,7 @@ KGE_EXPERIMENTS = {
     "ComplEx": {"model": "ComplEx", "args": ["--double_entity_embedding", "--double_relation_embedding"]},
 }
 
-TRADITIONAL_BASELINES = ["EB-CF", "SB-CF", "CBF", "KCP-ER"]
+TRADITIONAL_BASELINES = ["EB-CF", "SB-CF", "CBF"]
 
 
 def parse_args(argv=None):
