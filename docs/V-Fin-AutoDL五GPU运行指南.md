@@ -1,4 +1,4 @@
-# V-Fin AutoDL Five-GPU ER Workflow
+# V-Fin3 AutoDL Five-GPU ER Workflow
 
 This guide covers only the ER stage: SemanticConvE training, testing, ablations, comparison models, and result summaries. Generate all front files locally before uploading data to AutoDL.
 
@@ -53,7 +53,7 @@ Run these commands in the AutoDL JupyterLab terminal:
 
 ```bash
 cd /root/autodl-tmp
-git clone -b V-Fin --single-branch https://github.com/Tangfgjk/KG4ER-New.git
+git clone -b V-Fin3 --single-branch https://github.com/Tangfgjk/KG4ER-New.git
 cd KG4ER-New
 
 # Keep the CUDA-enabled PyTorch supplied by the image.
@@ -68,8 +68,8 @@ The last command must display `True` and the GPU name. To update an existing clo
 ```bash
 cd /root/autodl-tmp/KG4ER-New
 git fetch origin
-git checkout V-Fin
-git pull --ff-only origin V-Fin
+git checkout V-Fin3
+git pull --ff-only origin V-Fin3
 ```
 
 ## 4. Validate the Uploaded Data
@@ -113,12 +113,13 @@ Do not shut down or release the AutoDL instance while the job is running.
 The script `scripts/run_autodl_vfin_dataset.sh` performs:
 
 1. validation of the uploaded ER graph;
-2. SemanticConvE `full` plus all nine ablations;
-3. five random seeds: `2024,2025,2026,2027,2028`;
-4. comparison models: `TransE`, `TransE-adv`, `RotatE`, `DistMult`, `ComplEx`, `EB-CF`, `SB-CF`, `CBF`, and `KCP-ER`;
-5. result summaries.
+2. five SemanticConvE variants: `full`, `id_only`, `no_learner_id`, `no_learner_relation_id`, and `feature_only`;
+3. the five variants under both `--include-test-triples` and `--exclude-test-triples` protocols;
+4. one pilot random seed: `2024`;
+5. all available comparison models;
+6. result summaries, a combined top-K table, and ACC/NOV line charts for `N=10,20,...,100`.
 
-SemanticConvE uses `--include-test-triples`. The file includes no `rec` edges and contributes only the test learners' cognitive-state edges. Comparison models train only on `triples.txt`.
+In the include protocol, `test_triples.txt` contributes only the test learners' cognitive-state edges and contains no `rec` labels. The exclude protocol trains SemanticConvE from `triples.txt` only. All comparison models train only on `triples.txt`.
 
 GPU 1:
 
@@ -150,7 +151,7 @@ GPU 5:
 bash scripts/run_autodl_vfin_dataset.sh XES3G5M-sub-small
 ```
 
-Console output is also written to `logs/<dataset>_vfin_<timestamp>.log`. RotatE is expected to take substantially longer than the other comparison models.
+Console output is also written to `logs/<dataset>_vfin_<timestamp>.log`.
 
 ## 7. Resume
 
@@ -169,28 +170,31 @@ The script automatically generates summaries. To run them again for Eedi:
 ```bash
 DS=Eedi
 SEEDS=2024,2025,2026,2027,2028
-ABLATIONS=full,id_only,no_theta,no_text,no_exercise_ped,no_relation_features,no_mastery,no_forgetting,no_seq,no_type_aware_scoring
+ABLATIONS=full,id_only,no_learner_id,no_learner_relation_id,feature_only
 
-python codes-New-ConvE/summarize_semantic_results.py \
-  --dataset "$DS" \
-  --run-id "${DS}_vfin_semantic_5seeds" \
-  --runs-root runs \
-  --seeds "$SEEDS" \
-  --ablations "$ABLATIONS"
+for PROTOCOL in include_test exclude_test; do
+  python codes-New-ConvE/summarize_semantic_results.py \
+    --dataset "$DS" \
+    --run-id "${DS}_vfin3_semantic_${PROTOCOL}_1seed" \
+    --runs-root runs \
+    --seeds 2024 \
+    --ablations "$ABLATIONS"
+done
 
 python comparison_models/summarize_dataset_results.py \
   --dataset "$DS" \
-  --run-dir "runs/${DS}/${DS}_vfin_comparison_5seeds"
+  --run-dir "runs/${DS}/${DS}_vfin3_comparison_1seed"
 ```
 
 Main output files:
 
 ```text
-runs/<dataset>/<dataset>_vfin_semantic_5seeds/summaries/paper_table.md
-runs/<dataset>/<dataset>_vfin_comparison_5seeds/summaries/
+runs/<dataset>/<dataset>_vfin3_semantic_include_test_1seed/summaries/paper_table.md
+runs/<dataset>/<dataset>_vfin3_semantic_exclude_test_1seed/summaries/paper_table.md
+runs/<dataset>/<dataset>_vfin3_comparison_1seed/summaries/
+runs/<dataset>/<dataset>_vfin3_pilot_report/topk_comparison.md
+runs/<dataset>/<dataset>_vfin3_pilot_report/topk_comparison.png
 ```
-
-KGE comparison models run independently for five seeds. `EB-CF`, `SB-CF`, `CBF`, and `KCP-ER` are deterministic traditional baselines and run once in the current implementation.
 
 ## 9. Download Results
 

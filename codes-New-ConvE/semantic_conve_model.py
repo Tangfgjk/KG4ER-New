@@ -7,6 +7,12 @@ This V11.2 variant uses compact type-specific raw feature concatenation:
 * knowledge concept: ID_200 -> MLP -> 200
 * relation: concat(relation_ID_200, relation_type_16, strength_1) -> MLP -> 200
 
+It also supports a progressive ID-removal diagnostic sequence:
+
+* no_learner_id: learner uses theta only;
+* no_learner_relation_id: learner uses theta only and relations use type plus strength only;
+* feature_only: learner, exercise, and relation IDs are removed while KC IDs remain.
+
 The final 200-dimensional entity/relation representations are then consumed by
 the original ConvE scoring module.
 """
@@ -55,6 +61,9 @@ VALID_MODEL_ABLATIONS = {
     "no_exercise_ped",
     "no_relation_features",
     "id_only",
+    "no_learner_id",
+    "no_learner_relation_id",
+    "feature_only",
 }
 
 
@@ -143,6 +152,7 @@ class SemanticConvE(nn.Module):
 
         self.uid_fusion = RawConcatFusion(embedding_dim + self.learner_irt_width, embedding_dim)
         self.uid_id_fusion = RawConcatFusion(embedding_dim, embedding_dim)
+        self.uid_feature_only_fusion = RawConcatFusion(self.learner_irt_width, embedding_dim)
         self.exercise_fusion = RawConcatFusion(
             embedding_dim + self.text_dim + self.exercise_irt_width,
             embedding_dim,
@@ -150,8 +160,13 @@ class SemanticConvE(nn.Module):
         self.exercise_no_text_fusion = RawConcatFusion(embedding_dim + self.exercise_irt_width, embedding_dim)
         self.exercise_no_ped_fusion = RawConcatFusion(embedding_dim + self.text_dim, embedding_dim)
         self.exercise_id_fusion = RawConcatFusion(embedding_dim, embedding_dim)
+        self.exercise_feature_only_fusion = RawConcatFusion(
+            self.text_dim + self.exercise_irt_width,
+            embedding_dim,
+        )
         self.kc_fusion = RawConcatFusion(embedding_dim, embedding_dim)
         self.relation_fusion = RawConcatFusion(embedding_dim + self.relation_type_dim + 1, embedding_dim)
+        self.relation_feature_only_fusion = RawConcatFusion(self.relation_type_dim + 1, embedding_dim)
         self.entity_norm = nn.LayerNorm(embedding_dim)
         self.relation_norm = nn.LayerNorm(embedding_dim)
 
@@ -263,6 +278,22 @@ class SemanticConvE(nn.Module):
             "discrete_relation",
         }
 
+    def _removes_learner_id(self) -> bool:
+        return self.ablation_mode in {
+            "no_learner_id",
+            "no_learner_relation_id",
+            "feature_only",
+        }
+
+    def _removes_relation_id(self) -> bool:
+        return self.ablation_mode in {
+            "no_learner_relation_id",
+            "feature_only",
+        }
+
+    def _removes_exercise_id(self) -> bool:
+        return self.ablation_mode == "feature_only"
+
     def entity_embedding(self, entity_ids: torch.Tensor) -> torch.Tensor:
         id_emb = self.emb_e(entity_ids)
         if self.ablation_mode == "id_only":
@@ -275,7 +306,10 @@ class SemanticConvE(nn.Module):
         if uid_mask.any():
             uid_ids = entity_ids[uid_mask]
             uid_id_emb = id_emb[uid_mask]
-            if self._uses_theta():
+            if self._removes_learner_id():
+                theta = self._slice_numeric(uid_ids, "learner_irt")
+                fused_emb[uid_mask] = self.uid_feature_only_fusion(theta)
+            elif self._uses_theta():
                 theta = self._slice_numeric(uid_ids, "learner_irt")
                 fused_emb[uid_mask] = self.uid_fusion(torch.cat([uid_id_emb, theta], dim=1))
             else:
@@ -287,7 +321,13 @@ class SemanticConvE(nn.Module):
             ex_id_emb = id_emb[ex_mask]
             use_text = self._uses_exercise_text()
             use_ped = self._uses_exercise_pedagogy()
-            if use_text and use_ped:
+            if self._removes_exercise_id():
+                if not (use_text and use_ped):
+                    raise ValueError("feature_only requires exercise text and MIRT pedagogical features")
+                fused_emb[ex_mask] = self.exercise_feature_only_fusion(
+                    torch.cat([self._entity_text(ex_ids), self._slice_numeric(ex_ids, "exercise_irt")], dim=1)
+                )
+            elif use_text and use_ped:
                 fused_emb[ex_mask] = self.exercise_fusion(
                     torch.cat([ex_id_emb, self._entity_text(ex_ids), self._slice_numeric(ex_ids, "exercise_irt")], dim=1)
                 )
@@ -311,14 +351,25 @@ class SemanticConvE(nn.Module):
         return self.entity_norm(fused_emb)
 
     def gate_values(self) -> dict[str, object]:
+        uid_features = ["theta_mirt_norm_1"] if self._removes_learner_id() else ["entity_id_200", "theta_mirt_norm_1"]
+        exercise_features = (
+            ["topic_v/text_100", "difficulty_mirt_norm_1", "discrimination_mirt_norm_1"]
+            if self._removes_exercise_id()
+            else ["entity_id_200", "topic_v/text_100", "difficulty_mirt_norm_1", "discrimination_mirt_norm_1"]
+        )
+        relation_features = (
+            ["relation_type_16", "relation_strength_1"]
+            if self._removes_relation_id()
+            else ["relation_id_200", "relation_type_16", "relation_strength_1"]
+        )
         return {
             "fusion": "type-specific raw feature concatenation + MLP compression",
             "entity_features": {
-                "uid": ["entity_id_200", "theta_mirt_norm_1"],
-                "ex": ["entity_id_200", "topic_v/text_100", "difficulty_mirt_norm_1", "discrimination_mirt_norm_1"],
+                "uid": uid_features,
+                "ex": exercise_features,
                 "kc": ["entity_id_200"],
             },
-            "relation_features": ["relation_id_200", "relation_type_16", "relation_strength_1"],
+            "relation_features": relation_features,
             "ablation": self.ablation_mode,
         }
 
@@ -331,7 +382,10 @@ class SemanticConvE(nn.Module):
         strength = self.relation_strengths[relation_ids]
         if self.ablation_mode == "no_relation_strength":
             strength = torch.zeros_like(strength)
-        relation_emb = self.relation_fusion(torch.cat([id_emb, type_emb, strength], dim=1))
+        if self._removes_relation_id():
+            relation_emb = self.relation_feature_only_fusion(torch.cat([type_emb, strength], dim=1))
+        else:
+            relation_emb = self.relation_fusion(torch.cat([id_emb, type_emb, strength], dim=1))
         return self.relation_norm(relation_emb)
 
     def conve_transform(self, h_emb: torch.Tensor, r_emb: torch.Tensor) -> torch.Tensor:

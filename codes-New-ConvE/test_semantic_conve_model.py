@@ -103,6 +103,66 @@ class SemanticConvECompactConcatTest(unittest.TestCase):
 
         self.assertTrue(torch.allclose(embeddings_a, embeddings_b, atol=1e-6))
 
+    def test_no_learner_id_uses_theta_without_learner_id_embedding(self) -> None:
+        model_a = self.build_model()
+        model_b = self.build_model()
+        model_a.ablation_mode = "no_learner_id"
+        model_b.ablation_mode = "no_learner_id"
+        model_a.eval()
+        model_b.eval()
+        with torch.no_grad():
+            model_a.numeric_features[0, 0] = 0.35
+            model_b.numeric_features[0, 0] = 0.35
+            model_b.emb_e.weight[0].fill_(9.0)
+
+        embeddings_a = model_a.entity_embedding(torch.tensor([0], dtype=torch.long))
+        embeddings_b = model_b.entity_embedding(torch.tensor([0], dtype=torch.long))
+
+        self.assertTrue(torch.allclose(embeddings_a, embeddings_b, atol=1e-6))
+
+    def test_no_learner_relation_id_uses_type_and_strength_without_relation_id_embedding(self) -> None:
+        model_a = self.build_model()
+        model_b = self.build_model()
+        model_a.ablation_mode = "no_learner_relation_id"
+        model_b.ablation_mode = "no_learner_relation_id"
+        model_a.eval()
+        model_b.eval()
+        relation_ids = torch.tensor([0, 1], dtype=torch.long)
+        with torch.no_grad():
+            model_b.relation_id_emb.weight.fill_(9.0)
+
+        embeddings_a = model_a.relation_embedding(relation_ids)
+        embeddings_b = model_b.relation_embedding(relation_ids)
+
+        self.assertTrue(torch.allclose(embeddings_a, embeddings_b, atol=1e-6))
+        self.assertFalse(
+            torch.allclose(embeddings_a[0], embeddings_a[1], atol=1e-6),
+            "Different strengths must remain distinguishable after removing relation IDs",
+        )
+
+    def test_feature_only_ignores_uid_exercise_and_relation_id_embeddings(self) -> None:
+        model_a = self.build_model()
+        model_b = self.build_model()
+        model_a.ablation_mode = "feature_only"
+        model_b.ablation_mode = "feature_only"
+        model_a.eval()
+        model_b.eval()
+        with torch.no_grad():
+            model_a.numeric_features[0, 0] = 0.25
+            model_b.numeric_features[0, 0] = 0.25
+            model_a.text_features[2, 0] = 0.75
+            model_b.text_features[2, 0] = 0.75
+            model_a.numeric_features[2, 1:] = torch.tensor([0.2, 0.8])
+            model_b.numeric_features[2, 1:] = torch.tensor([0.2, 0.8])
+            model_b.emb_e.weight[0].fill_(8.0)
+            model_b.emb_e.weight[2].fill_(7.0)
+            model_b.relation_id_emb.weight.fill_(6.0)
+
+        entity_ids = torch.tensor([0, 2], dtype=torch.long)
+        relation_ids = torch.tensor([0, 1], dtype=torch.long)
+        self.assertTrue(torch.allclose(model_a.entity_embedding(entity_ids), model_b.entity_embedding(entity_ids), atol=1e-6))
+        self.assertTrue(torch.allclose(model_a.relation_embedding(relation_ids), model_b.relation_embedding(relation_ids), atol=1e-6))
+
     def test_no_text_masks_exercise_text(self) -> None:
         model_a = self.build_model()
         model_b = self.build_model()
@@ -155,6 +215,16 @@ class SemanticConvECompactConcatTest(unittest.TestCase):
         self.assertEqual(values["fusion"], "type-specific raw feature concatenation + MLP compression")
         self.assertIn("entity_id_200", values["entity_features"]["uid"])
         self.assertIn("relation_id_200", values["relation_features"])
+
+    def test_feature_only_gate_values_report_removed_id_features(self) -> None:
+        model = self.build_model()
+        model.ablation_mode = "feature_only"
+
+        values = model.gate_values()
+
+        self.assertNotIn("entity_id_200", values["entity_features"]["uid"])
+        self.assertNotIn("entity_id_200", values["entity_features"]["ex"])
+        self.assertNotIn("relation_id_200", values["relation_features"])
 
     def test_can_score_tail_pairs_from_external_head_embeddings(self) -> None:
         model = self.build_model(

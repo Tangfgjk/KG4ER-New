@@ -46,6 +46,9 @@ VALID_ABLATIONS = [
     "no_exercise_ped",
     "no_relation_features",
     "id_only",
+    "no_learner_id",
+    "no_learner_relation_id",
+    "feature_only",
 ]
 
 GRAPH_ABLATIONS = ["no_mastery", "no_forgetting", "no_seq"]
@@ -53,6 +56,9 @@ GRAPH_ABLATIONS = ["no_mastery", "no_forgetting", "no_seq"]
 DEFAULT_ALL_ABLATIONS = [
     "full",
     "id_only",
+    "no_learner_id",
+    "no_learner_relation_id",
+    "feature_only",
     "no_theta",
     "no_text",
     "no_exercise_ped",
