@@ -116,10 +116,10 @@ The script `scripts/run_autodl_vfin_dataset.sh` performs:
 2. five SemanticConvE variants: `full`, `id_only`, `no_learner_id`, `no_learner_relation_id`, and `feature_only`;
 3. the five variants under both `--include-test-triples` and `--exclude-test-triples` protocols;
 4. one pilot random seed: `2024`;
-5. all available comparison models;
+5. only the two comparison models: `TransE` and `TransE-adv`;
 6. result summaries, a combined top-K table, and ACC/NOV line charts for `N=10,20,...,100`.
 
-In the include protocol, `test_triples.txt` contributes only the test learners' cognitive-state edges and contains no `rec` labels. The exclude protocol trains SemanticConvE from `triples.txt` only. All comparison models train only on `triples.txt`.
+In the include protocol, `test_triples.txt` contributes only the test learners' cognitive-state edges and contains no `rec` labels. The exclude protocol trains SemanticConvE from `triples.txt` only. `TransE` and `TransE-adv` always train only on `triples.txt`.
 
 GPU 1:
 

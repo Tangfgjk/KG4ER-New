@@ -113,14 +113,14 @@ if [[ "$RESUME" -eq 1 && -d "runs/${DATASET}/${COMPARISON_RUN_ID}" ]]; then
   COMPARISON_RESUME=(--resume)
 fi
 
-echo "===== Step 4/4: all comparison models ====="
+echo "===== Step 4/4: TransE comparison models ====="
 python comparison_models/run_v9_comparison_experiments.py \
   --dataset "$DATASET" \
   --data-root Data_Fin \
   --graph-subdir er_graph \
   --run-id "$COMPARISON_RUN_ID" \
   --seeds "$SEEDS" \
-  --models all \
+  --models TransE,TransE-adv \
   --cuda auto \
   "${COMPARISON_RESUME[@]}"
 
