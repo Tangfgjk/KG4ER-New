@@ -93,22 +93,49 @@ def write_markdown(rows: list[dict], path: Path) -> None:
 
 
 def plot(rows: list[dict], path: Path) -> None:
-    figure, axes = plt.subplots(1, 2, figsize=(16, 6), dpi=180, constrained_layout=True)
+    series = sorted({(row["group"], row["model"]) for row in rows})
+    palette = plt.get_cmap("tab20").colors
+    style_by_group = {
+        "Comparison": ("-", "o", "Cmp"),
+        "SemanticConvE include-test": ("-", "^", "Inc"),
+        "SemanticConvE exclude-test": ("--", "s", "Exc"),
+    }
+
+    def series_label(group: str, model: str) -> str:
+        _, _, prefix = style_by_group.get(group, ("-", "D", group))
+        short_model = model.replace("SemanticConvE_", "").replace("SemanticConvE", "full")
+        return f"{prefix}: {short_model}"
+
+    color_by_series = {key: palette[index % len(palette)] for index, key in enumerate(series)}
+    figure, axes = plt.subplots(1, 2, figsize=(19, 7), dpi=180)
     for axis, metric in zip(axes, METRICS):
         metric_rows = [row for row in rows if row["metric"] == metric]
-        names = sorted({(row["group"], row["model"]) for row in metric_rows})
-        for group, model in names:
+        for group, model in series:
             values = {row["top_k"]: row["mean"] for row in metric_rows if row["group"] == group and row["model"] == model}
             xs = [k for k in TOP_KS if k in values]
             ys = [values[k] for k in xs]
-            axis.plot(xs, ys, marker="o", linewidth=1.8, markersize=3.8, label=f"{group}: {model}")
-        axis.set_title(metric)
+            if not xs:
+                continue
+            linestyle, marker, _ = style_by_group.get(group, ("-", "D", group))
+            axis.plot(
+                xs,
+                ys,
+                color=color_by_series[(group, model)],
+                linestyle=linestyle,
+                marker=marker,
+                linewidth=2.0,
+                markersize=4.2,
+                label=series_label(group, model),
+            )
+        axis.set_title(metric, fontsize=14, weight="bold")
         axis.set_xlabel("Recommendation list size N")
         axis.set_ylabel(metric)
         axis.set_xticks(TOP_KS)
         axis.grid(alpha=0.25)
-        axis.legend(fontsize=7, loc="best")
-    figure.savefig(path, bbox_inches="tight")
+    handles, labels = axes[0].get_legend_handles_labels()
+    figure.legend(handles, labels, title="Curve key", fontsize=8, title_fontsize=9, loc="center left", bbox_to_anchor=(0.84, 0.5))
+    figure.subplots_adjust(left=0.06, right=0.82, bottom=0.13, top=0.90, wspace=0.20)
+    figure.savefig(path, bbox_inches="tight", facecolor="white")
     plt.close(figure)
 
 
