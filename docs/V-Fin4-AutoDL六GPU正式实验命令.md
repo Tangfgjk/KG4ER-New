@@ -1,4 +1,4 @@
-# V-Fin4 AutoDL 正式实验命令
+# V-Fin4 AutoDL 六 GPU 正式实验命令
 
 ## 1. 实验协议
 
