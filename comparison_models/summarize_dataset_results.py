@@ -515,7 +515,9 @@ def write_paper_metrics_markdown(dataset, summary, metadata, path):
             if metric == "NOV":
                 row.append(_format_summary(item["Ep_sim@10_mean"], item["Ep_sim@10_std"]))
             rows.append(row)
-        lines.extend([f"## {metric}", "", _markdown_table(headers, rows, range(1, len(headers))), ""])
+        lines.extend([f"## {metric}", ""])
+        lines.extend(_markdown_table(headers, rows, range(1, len(headers))))
+        lines.append("")
     path.write_text("\n".join(lines), encoding="utf-8")
 
 
