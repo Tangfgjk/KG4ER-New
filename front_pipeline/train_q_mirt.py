@@ -22,9 +22,20 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--lr", type=float, default=0.001)
     parser.add_argument("--weight-decay", type=float, default=1e-4)
     parser.add_argument("--q-normalization", choices=["none", "mean"], default="mean")
-    parser.add_argument("--test-theta-steps", type=int, default=150)
-    parser.add_argument("--test-theta-lr", type=float, default=0.05)
-    parser.add_argument("--test-theta-l2", type=float, default=1e-4)
+    parser.add_argument("--test-theta-steps", type=int, default=50)
+    parser.add_argument("--test-theta-lr", type=float, default=0.005)
+    parser.add_argument(
+        "--test-theta-prior-weight",
+        type=float,
+        default=0.01,
+        help="MAP prior weight for frozen-item test-learner theta estimation.",
+    )
+    parser.add_argument(
+        "--test-theta-bound-std",
+        type=float,
+        default=3.0,
+        help="Clamp adapted theta componentwise to train_mean +/- this many train standard deviations.",
+    )
     parser.add_argument("--device", default="cuda" if torch.cuda.is_available() else "cpu")
     parser.add_argument("--force", action="store_true")
     return parser.parse_args()
@@ -45,25 +56,42 @@ def loader(frame: pd.DataFrame, uid_to_local: dict[int, int], batch_size: int, s
 def adapt_theta(
     model: QConstrainedMIRT,
     interactions: pd.DataFrame,
-    concept_count: int,
+    theta_mean: torch.Tensor,
+    theta_std: torch.Tensor,
     steps: int,
     lr: float,
-    l2: float,
+    prior_weight: float,
+    bound_std: float,
     device: torch.device,
 ) -> torch.Tensor:
+    """Estimate one held-out learner's theta while keeping all item parameters frozen.
+
+    This is MAP person scoring, not an additional fit of the MIRT item model.  The
+    outer-train theta distribution supplies both the initialization and a
+    dimension-wise Gaussian prior, which prevents sparse/all-correct histories
+    from producing implausibly large ability vectors.
+    """
     if interactions.empty:
-        return torch.zeros(concept_count, dtype=torch.float32)
+        return theta_mean.detach().cpu()
     items = torch.as_tensor(interactions["question"].to_numpy(dtype=np.int64), device=device)
     labels = torch.as_tensor(interactions["response"].to_numpy(dtype=np.float32), device=device)
-    theta = torch.zeros(concept_count, device=device, requires_grad=True)
+    prior_mean = theta_mean.detach().to(device=device, dtype=torch.float32)
+    prior_std = theta_std.detach().to(device=device, dtype=torch.float32).clamp_min(1e-3)
+    lower = prior_mean - float(bound_std) * prior_std
+    upper = prior_mean + float(bound_std) * prior_std
+    theta = prior_mean.clone().detach().requires_grad_(True)
     optimizer = torch.optim.Adam([theta], lr=lr)
     model.eval()
     for _ in range(steps):
         optimizer.zero_grad()
         logits = model.logits_with_theta(theta.unsqueeze(0).expand(len(items), -1), items)
-        loss = functional.binary_cross_entropy_with_logits(logits, labels) + float(l2) * theta.square().mean()
+        response_loss = functional.binary_cross_entropy_with_logits(logits, labels)
+        prior_loss = ((theta - prior_mean) / prior_std).square().mean()
+        loss = response_loss + float(prior_weight) * prior_loss
         loss.backward()
         optimizer.step()
+        with torch.no_grad():
+            theta.copy_(torch.maximum(torch.minimum(theta, upper), lower))
     return theta.detach().cpu()
 
 
@@ -110,6 +138,12 @@ def main() -> None:
         b_values = model.b.weight.detach().cpu().numpy().astype(np.float32)
         train_theta = model.theta.weight.detach().cpu().numpy().astype(np.float32)
 
+    train_theta_mean = train_theta.mean(axis=0).astype(np.float32)
+    train_theta_std = train_theta.std(axis=0).astype(np.float32)
+    # A zero variance dimension should behave as a fixed prior dimension rather
+    # than creating an undefined standardized MAP penalty.
+    train_theta_std = np.maximum(train_theta_std, 1e-3)
+
     theta_all = np.zeros((raw.student_count, raw.concept_count), dtype=np.float32)
     theta_all[np.asarray(train_uids, dtype=np.int64)] = train_theta
     test_frame = raw.interactions[raw.interactions["uid"].isin(test_uids)]
@@ -117,10 +151,12 @@ def main() -> None:
         theta_all[uid] = adapt_theta(
             model,
             test_frame[test_frame["uid"] == uid],
-            raw.concept_count,
+            torch.as_tensor(train_theta_mean),
+            torch.as_tensor(train_theta_std),
             args.test_theta_steps,
             args.test_theta_lr,
-            args.test_theta_l2,
+            args.test_theta_prior_weight,
+            args.test_theta_bound_std,
             device,
         ).numpy()
         if position % 50 == 0 or position == len(test_uids):
@@ -159,6 +195,13 @@ def main() -> None:
             "q_used_in_forward": True,
             "train_users": len(train_uids),
             "test_users_theta_adapted_with_frozen_item_parameters": len(test_uids),
+            "test_theta_estimation": {
+                "method": "MAP_person_scoring_with_frozen_item_parameters",
+                "initialization": "outer_train_theta_mean",
+                "prior": "dimensionwise_gaussian_from_outer_train_theta",
+                "item_parameters_updated_for_test_users": False,
+                "empty_history_policy": "outer_train_theta_mean",
+            },
             "item_count": raw.exercise_count,
             "concept_count": raw.concept_count,
             "train_interactions": int(len(train_frame)),
@@ -177,7 +220,8 @@ def main() -> None:
                 "weight_decay": args.weight_decay,
                 "test_theta_steps": args.test_theta_steps,
                 "test_theta_lr": args.test_theta_lr,
-                "test_theta_l2": args.test_theta_l2,
+                "test_theta_prior_weight": args.test_theta_prior_weight,
+                "test_theta_bound_std": args.test_theta_bound_std,
             },
             "history": history,
             "files": {

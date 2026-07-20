@@ -18,7 +18,7 @@ Data_Fin/<dataset>/er_graph/
 | 阶段 | 训练数据与约束 | 输出 |
 | --- | --- | --- |
 | `prepare_front_protocol.py` | `raw/interactions_all.csv` 与 `raw/student_split.csv` | 固定外层训练/测试学生队列及内层验证划分 |
-| `train_q_mirt.py` | 仅外层训练学生更新共享 `a/b`；Q 矩阵约束题目区分度；测试学生只优化自身 `theta` | Q 约束 MIRT 的 `a/b/theta`、难度、区分度 |
+| `train_q_mirt.py` | 仅外层训练学生更新共享 `a/b`；Q 矩阵约束题目区分度；测试学生以冻结 `a/b`、训练 theta 分布先验的 MAP person scoring 估计自身 `theta` | Q 约束 MIRT 的 `a/b/theta`、难度、区分度 |
 | `train_multilabel_seq.py` | 仅外层训练学生训练；输入为题目 Q 向量与正误；标签是下一题的完整多标签 Q 向量 | `stu2know_seq.json` |
 | `train_ektm_mirt.py` | 仅外层训练学生训练；冻结后对所有学生前向导出 | `stu2know_mastery.json`、题目/知识点 Bi-GRU 文本向量 |
 | `generate_forgetting.py` | 所有学生各自历史；不更新共享参数 | `stu2know_forget.json`、按题目知识点平均的 `stu2ex_forget.json` |
