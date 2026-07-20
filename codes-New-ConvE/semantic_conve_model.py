@@ -15,6 +15,8 @@ It also supports a progressive ID-removal diagnostic sequence:
 * feature_only_relation_id: feature_only, except relations use relation IDs only.
 * feature_only_learner_id: feature_only, except learners use learner IDs only.
 * feature_only_exercise_id: feature_only, except exercises use exercise IDs only.
+* feature_only_no_mastery/no_forgetting/no_seq: feature_only representations
+  combined with the corresponding graph-level cognitive relation ablation.
 
 The final 200-dimensional entity/relation representations are then consumed by
 the original ConvE scoring module.
@@ -70,6 +72,9 @@ VALID_MODEL_ABLATIONS = {
     "feature_only_relation_id",
     "feature_only_learner_id",
     "feature_only_exercise_id",
+    "feature_only_no_mastery",
+    "feature_only_no_forgetting",
+    "feature_only_no_seq",
 }
 
 
@@ -291,6 +296,9 @@ class SemanticConvE(nn.Module):
             "feature_only",
             "feature_only_relation_id",
             "feature_only_exercise_id",
+            "feature_only_no_mastery",
+            "feature_only_no_forgetting",
+            "feature_only_no_seq",
         }
 
     def _uses_learner_id_only(self) -> bool:
@@ -302,6 +310,9 @@ class SemanticConvE(nn.Module):
             "feature_only",
             "feature_only_learner_id",
             "feature_only_exercise_id",
+            "feature_only_no_mastery",
+            "feature_only_no_forgetting",
+            "feature_only_no_seq",
         }
 
     def _uses_relation_id_only(self) -> bool:
@@ -312,6 +323,9 @@ class SemanticConvE(nn.Module):
             "feature_only",
             "feature_only_relation_id",
             "feature_only_learner_id",
+            "feature_only_no_mastery",
+            "feature_only_no_forgetting",
+            "feature_only_no_seq",
         }
 
     def _uses_exercise_id_only(self) -> bool:

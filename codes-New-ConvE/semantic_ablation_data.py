@@ -32,6 +32,20 @@ GRAPH_ABLATION_CONFIGS: Dict[str, Dict[str, Any]] = {
         "active_terms": (MASTERY, FORGETTING),
         "remove_relation_prefix": "pkc",
     },
+    # These variants use the same graph-level cognitive ablation as their
+    # no_* counterparts, while SemanticConvE uses feature-only representations.
+    "feature_only_no_mastery": {
+        "active_terms": (SEQUENCE, FORGETTING),
+        "remove_relation_prefix": "mlkc",
+    },
+    "feature_only_no_forgetting": {
+        "active_terms": (MASTERY, SEQUENCE),
+        "remove_relation_prefix": "exfr",
+    },
+    "feature_only_no_seq": {
+        "active_terms": (MASTERY, FORGETTING),
+        "remove_relation_prefix": "pkc",
+    },
 }
 
 GRAPH_ABLATIONS = tuple(GRAPH_ABLATION_CONFIGS)

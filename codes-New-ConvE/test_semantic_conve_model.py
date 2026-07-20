@@ -163,6 +163,38 @@ class SemanticConvECompactConcatTest(unittest.TestCase):
         self.assertTrue(torch.allclose(model_a.entity_embedding(entity_ids), model_b.entity_embedding(entity_ids), atol=1e-6))
         self.assertTrue(torch.allclose(model_a.relation_embedding(relation_ids), model_b.relation_embedding(relation_ids), atol=1e-6))
 
+    def test_feature_only_cognitive_graph_variants_ignore_ids(self) -> None:
+        for ablation in ("feature_only_no_mastery", "feature_only_no_forgetting", "feature_only_no_seq"):
+            model_a = self.build_model()
+            model_b = self.build_model()
+            model_a.ablation_mode = ablation
+            model_b.ablation_mode = ablation
+            model_a.eval()
+            model_b.eval()
+            with torch.no_grad():
+                model_a.numeric_features[0, 0] = model_b.numeric_features[0, 0] = 0.25
+                model_a.text_features[2, 0] = model_b.text_features[2, 0] = 0.75
+                model_a.numeric_features[2, 1:] = model_b.numeric_features[2, 1:] = torch.tensor([0.2, 0.8])
+                model_b.emb_e.weight[[0, 2]].fill_(8.0)
+                model_b.relation_id_emb.weight.fill_(8.0)
+
+            self.assertTrue(
+                torch.allclose(
+                    model_a.entity_embedding(torch.tensor([0, 2])),
+                    model_b.entity_embedding(torch.tensor([0, 2])),
+                    atol=1e-6,
+                ),
+                ablation,
+            )
+            self.assertTrue(
+                torch.allclose(
+                    model_a.relation_embedding(torch.tensor([0, 1])),
+                    model_b.relation_embedding(torch.tensor([0, 1])),
+                    atol=1e-6,
+                ),
+                ablation,
+            )
+
     def test_no_text_masks_exercise_text(self) -> None:
         model_a = self.build_model()
         model_b = self.build_model()
