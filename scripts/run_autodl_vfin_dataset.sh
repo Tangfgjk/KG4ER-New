@@ -45,7 +45,7 @@ cd "$REPO_ROOT"
 
 export WANDB_MODE="${WANDB_MODE:-disabled}"
 SEEDS="2024,2025,2026,2027,2028"
-ABLATIONS="full,id_only,feature_only,feature_only_relation_id,feature_only_learner_id,feature_only_exercise_id,no_forgetting,no_mastery,no_seq"
+ABLATIONS="id_only,feature_only,feature_only_relation_id,feature_only_learner_id,feature_only_exercise_id,feature_only_no_mastery,feature_only_no_forgetting,feature_only_no_seq"
 SEMANTIC_RUN_ID="${DATASET}_vfin4_semantic_5seeds"
 COMPARISON_RUN_ID="${DATASET}_vfin4_comparison_5seeds"
 REPORT_DIR="runs/${DATASET}/${DATASET}_vfin4_report"
@@ -70,7 +70,7 @@ if [[ "$MODE" == "all" || "$MODE" == "semantic" ]]; then
   if [[ "$RESUME" -eq 1 && -d "runs/${DATASET}/${SEMANTIC_RUN_ID}" ]]; then
     SEMANTIC_RESUME=(--resume)
   fi
-  echo "===== SemanticConvE: nine-model ablation suite ====="
+  echo "===== SemanticConvE: feature-only primary model plus seven ablations ====="
   python codes-New-ConvE/run_semantic_experiments.py \
     --dataset "$DATASET" \
     --data-root Data_Fin \

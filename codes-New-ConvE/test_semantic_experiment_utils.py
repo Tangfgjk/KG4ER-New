@@ -89,15 +89,14 @@ class SemanticExperimentUtilsTest(unittest.TestCase):
         self.assertEqual(
             ablations,
             [
-                "full",
                 "id_only",
                 "feature_only",
                 "feature_only_relation_id",
                 "feature_only_learner_id",
                 "feature_only_exercise_id",
-                "no_mastery",
-                "no_forgetting",
-                "no_seq",
+                "feature_only_no_mastery",
+                "feature_only_no_forgetting",
+                "feature_only_no_seq",
             ],
         )
 
