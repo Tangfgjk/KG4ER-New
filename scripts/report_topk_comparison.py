@@ -13,7 +13,7 @@ import matplotlib.pyplot as plt
 
 
 METRICS = ("ACC", "NOV")
-TOP_KS = tuple(range(10, 101, 10))
+TOP_KS = tuple(range(5, 101, 5))
 
 # Fixed colors make the same model recognisable across datasets and figures.
 MODEL_COLORS = {
@@ -128,8 +128,8 @@ def plot_category(rows: list[dict], models: tuple[str, ...], title: str, path: P
                 continue
             axis.plot(
                 xs, [values[k] for k in xs], label=key, color=MODEL_COLORS.get(key, "#111827"),
-                marker=MODEL_MARKERS.get(key, "o"), linewidth=3.0 if key == "full" else 2.0,
-                markersize=6.0 if key == "full" else 4.8,
+                marker=MODEL_MARKERS.get(key, "o"), linewidth=3.0 if key == "feature_only" else 2.0,
+                markersize=6.0 if key == "feature_only" else 4.8,
             )
         axis.set_title(metric, fontsize=14, weight="bold")
         axis.set_xlabel("Recommendation list size N")
@@ -145,10 +145,15 @@ def plot_category(rows: list[dict], models: tuple[str, ...], title: str, path: P
 
 
 def main() -> None:
+    global TOP_KS
     parser = argparse.ArgumentParser(description="Create split tables and readable top-K figures for completed ER runs.")
     parser.add_argument("--run-dir", action="append", required=True, type=parse_run_dir, metavar="LABEL=PATH")
     parser.add_argument("--output-dir", required=True)
+    parser.add_argument("--top-ks", default=",".join(str(value) for value in TOP_KS))
     args = parser.parse_args()
+    TOP_KS = tuple(int(item.strip()) for item in args.top_ks.split(",") if item.strip())
+    if not TOP_KS or any(value <= 0 for value in TOP_KS):
+        raise ValueError("--top-ks must contain positive integers")
     rows: list[dict] = []
     for label, run_dir in args.run_dir:
         if not run_dir.is_dir():

@@ -1,15 +1,16 @@
 #!/usr/bin/env bash
-# Run V-Fin4 experiments for one dataset on one AutoDL GPU.
+# Run V-Fin6 experiments for one dataset on one AutoDL GPU.
 #
 # Examples:
 #   bash scripts/run_autodl_vfin_dataset.sh Eedi all
 #   bash scripts/run_autodl_vfin_dataset.sh XES3G5M-sub-small semantic
 #   bash scripts/run_autodl_vfin_dataset.sh XES3G5M-sub-small comparison --resume
+#   bash scripts/run_autodl_vfin_dataset.sh Eedi all --seeds 2024,2025,2026
 
 set -euo pipefail
 
 if [[ $# -lt 1 ]]; then
-  echo "Usage: bash scripts/run_autodl_vfin_dataset.sh <dataset> [all|semantic|comparison] [--resume]"
+  echo "Usage: bash scripts/run_autodl_vfin_dataset.sh <dataset> [all|semantic|comparison] [--seeds 2024,2025,2026] [--resume]"
   exit 2
 fi
 
@@ -17,8 +18,10 @@ DATASET="$1"
 shift
 MODE="all"
 RESUME=0
+SEEDS="2024,2025,2026"
+TOP_KS="5,10,15,20,25,30,35,40,45,50,55,60,65,70,75,80,85,90,95,100"
 
-if [[ $# -gt 0 && "$1" != "--resume" ]]; then
+if [[ $# -gt 0 && "$1" != "--resume" && "$1" != "--seeds" ]]; then
   MODE="$1"
   shift
 fi
@@ -26,6 +29,14 @@ fi
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --resume) RESUME=1 ;;
+    --seeds)
+      shift
+      if [[ $# -eq 0 ]]; then
+        echo "--seeds requires a comma-separated value"
+        exit 2
+      fi
+      SEEDS="$1"
+      ;;
     *) echo "Unknown argument: $1"; exit 2 ;;
   esac
   shift
@@ -35,6 +46,13 @@ case "$DATASET" in
   Eedi|algebra2005|assist2009-sub|statics2011|XES3G5M-sub-small) ;;
   *) echo "Unsupported dataset: $DATASET"; exit 2 ;;
 esac
+
+IFS=',' read -r -a SEED_LIST <<< "$SEEDS"
+if [[ ${#SEED_LIST[@]} -eq 0 ]]; then
+  echo "No seeds were supplied"
+  exit 2
+fi
+SEED_COUNT=${#SEED_LIST[@]}
 case "$MODE" in
   all|semantic|comparison) ;;
   *) echo "Mode must be one of: all, semantic, comparison"; exit 2 ;;
@@ -44,18 +62,18 @@ REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$REPO_ROOT"
 
 export WANDB_MODE="${WANDB_MODE:-disabled}"
-SEEDS="2024,2025,2026,2027,2028"
 ABLATIONS="id_only,feature_only,feature_only_relation_id,feature_only_learner_id,feature_only_exercise_id,feature_only_no_mastery,feature_only_no_forgetting,feature_only_no_seq"
-SEMANTIC_RUN_ID="${DATASET}_vfin4_semantic_5seeds"
-COMPARISON_RUN_ID="${DATASET}_vfin4_comparison_5seeds"
-REPORT_DIR="runs/${DATASET}/${DATASET}_vfin4_report"
+SEMANTIC_RUN_ID="${DATASET}_vfin6_semantic_${SEED_COUNT}seeds"
+COMPARISON_RUN_ID="${DATASET}_vfin6_comparison_${SEED_COUNT}seeds"
+REPORT_DIR="runs/${DATASET}/${DATASET}_vfin6_report_${SEED_COUNT}seeds"
 
 mkdir -p logs
-LOG_FILE="logs/${DATASET}_vfin4_${MODE}_$(date +%Y%m%d_%H%M%S).log"
+LOG_FILE="logs/${DATASET}_vfin6_${MODE}_$(date +%Y%m%d_%H%M%S).log"
 exec > >(tee -a "$LOG_FILE") 2>&1
 
-echo "===== V-Fin4 five-seed workflow ====="
+echo "===== V-Fin6 workflow ====="
 echo "dataset=$DATASET mode=$MODE"
+echo "seeds=$SEEDS top_ks=$TOP_KS"
 echo "All training uses triples.txt only; test_triples.txt is evaluation-only."
 python -c "import torch; print('torch=', torch.__version__); print('cuda=', torch.cuda.is_available()); print('gpu=', torch.cuda.get_device_name(0) if torch.cuda.is_available() else 'CPU')"
 
@@ -82,6 +100,7 @@ if [[ "$MODE" == "all" || "$MODE" == "semantic" ]]; then
     --bs 1024 \
     --learning-rate 0.001 \
     --negative-ratio 5 \
+    --top-ks "$TOP_KS" \
     --cuda auto \
     --exclude-test-triples \
     "${SEMANTIC_RESUME[@]}"
@@ -91,7 +110,16 @@ if [[ "$MODE" == "all" || "$MODE" == "semantic" ]]; then
     --run-id "$SEMANTIC_RUN_ID" \
     --runs-root runs \
     --seeds "$SEEDS" \
-    --ablations "$ABLATIONS"
+    --ablations "$ABLATIONS" \
+    --top-ks "$TOP_KS"
+
+  echo "===== Export local explanation evidence for the primary feature_only model ====="
+  python scripts/export_primary_model_evidence.py \
+    --data-dir "Data_Fin/${DATASET}/er_graph" \
+    --semantic-run-dir "runs/${DATASET}/${SEMANTIC_RUN_ID}" \
+    --seeds "$SEEDS" \
+    --selection-top-k 20 \
+    --evidence-top-k 20
 fi
 
 if [[ "$MODE" == "all" || "$MODE" == "comparison" ]]; then
@@ -107,6 +135,7 @@ if [[ "$MODE" == "all" || "$MODE" == "comparison" ]]; then
     --run-id "$COMPARISON_RUN_ID" \
     --seeds "$SEEDS" \
     --models all \
+    --top-ks "$TOP_KS" \
     --cuda auto \
     "${COMPARISON_RESUME[@]}"
 
@@ -120,7 +149,8 @@ if [[ -d "runs/${DATASET}/${SEMANTIC_RUN_ID}" && -d "runs/${DATASET}/${COMPARISO
   python scripts/report_topk_comparison.py \
     --run-dir "SemanticConvE=runs/${DATASET}/${SEMANTIC_RUN_ID}" \
     --run-dir "Comparison=runs/${DATASET}/${COMPARISON_RUN_ID}" \
-    --output-dir "$REPORT_DIR"
+    --output-dir "$REPORT_DIR" \
+    --top-ks "$TOP_KS"
 else
   echo "Combined report deferred: run the other mode on this machine or merge its results first."
 fi
