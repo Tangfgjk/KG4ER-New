@@ -7,7 +7,7 @@ from pathlib import Path
 from statistics import mean, stdev
 
 
-TOP_KS = tuple(range(10, 101, 10))
+TOP_KS = tuple(range(5, 101, 5))
 PREFERRED_MODEL_ORDER = (
     "ConvE_full",
     "ConvE_no_seq",
@@ -352,7 +352,7 @@ def write_markdown_report(dataset, rows, summary, metadata, path):
         "",
         "## Statistical scope",
         "",
-        "- Metrics: `ACC/NOV @ 10,20,30,40,50,60,70,80,90,100` and `Ep_sim@10`.",
+        "- Metrics: `ACC/NOV @ 5,10,15,...,100` and `Ep_sim@10`.",
         "- Per-seed tables retain the mean stored in each `eval/metrics.json`.",
         "- Model summaries report `mean ± sample std`; sample std uses `ddof=1`.",
         "- Deterministic single-run baselines have no cross-seed standard deviation.",
@@ -494,7 +494,7 @@ def write_paper_metrics_markdown(dataset, summary, metadata, path):
     lines = [
         f"# {dataset} paper-style per-K metrics",
         "",
-        "- K: `10, 20, 30, 40, 50, 60, 70, 80, 90, 100`",
+        "- K: `5, 10, 15, ..., 100`",
         "- Seeded models: mean and sample Std over available seeds.",
         "- Deterministic baselines: mean is reported and Std is blank.",
         f"- Replaced rows: {metadata['replacement_count']}.",

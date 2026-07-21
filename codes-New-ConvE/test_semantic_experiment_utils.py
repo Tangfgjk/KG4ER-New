@@ -74,7 +74,7 @@ class SemanticExperimentUtilsTest(unittest.TestCase):
                 os.chdir(cwd)
 
     def test_model_version_marks_feature_only_workflow(self) -> None:
-        self.assertIn("vfin7", MODEL_VERSION)
+        self.assertIn("vfin8", MODEL_VERSION)
         self.assertIn("feature_only", MODEL_VERSION)
         self.assertIn("no_sequence", MODEL_VERSION)
 

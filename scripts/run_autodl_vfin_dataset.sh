@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Run V-Fin7 no-sequence experiments for one dataset on one AutoDL GPU.
+# Run V-Fin8 no-sequence experiments for one dataset on one AutoDL GPU.
 #
 # Examples:
 #   bash scripts/run_autodl_vfin_dataset.sh Eedi all
@@ -63,18 +63,21 @@ cd "$REPO_ROOT"
 
 export WANDB_MODE="${WANDB_MODE:-disabled}"
 ABLATIONS="id_only,feature_only,feature_only_relation_id,feature_only_learner_id,feature_only_exercise_id,feature_only_no_mastery,feature_only_no_forgetting"
-SEMANTIC_RUN_ID="${DATASET}_vfin7_noseq_semantic_${SEED_COUNT}seeds"
-COMPARISON_RUN_ID="${DATASET}_vfin7_noseq_comparison_${SEED_COUNT}seeds"
-REPORT_DIR="runs/${DATASET}/${DATASET}_vfin7_noseq_report_${SEED_COUNT}seeds"
+COMPARISON_MODELS="TransE,TransE-adv,RotatE,DistMult,ComplEx,EB-CF,SB-CF,CBF"
+SEMANTIC_RUN_ID="${DATASET}_vfin8_semantic_${SEED_COUNT}seeds"
+COMPARISON_RUN_ID="${DATASET}_vfin8_comparison_${SEED_COUNT}seeds"
+REPORT_DIR="runs/${DATASET}/${DATASET}_vfin8_report_${SEED_COUNT}seeds"
 
 mkdir -p logs
-LOG_FILE="logs/${DATASET}_vfin7_noseq_${MODE}_$(date +%Y%m%d_%H%M%S).log"
+LOG_FILE="logs/${DATASET}_vfin8_${MODE}_$(date +%Y%m%d_%H%M%S).log"
 exec > >(tee -a "$LOG_FILE") 2>&1
 
-echo "===== V-Fin7 no-sequence workflow ====="
+echo "===== V-Fin8 no-sequence workflow ====="
 echo "dataset=$DATASET mode=$MODE"
 echo "seeds=$SEEDS top_ks=$TOP_KS"
 echo "All training uses triples.txt only; test_triples.txt is evaluation-only."
+echo "SemanticConvE ablations=$ABLATIONS"
+echo "Comparison models=$COMPARISON_MODELS"
 python -c "import torch; print('torch=', torch.__version__); print('cuda=', torch.cuda.is_available()); print('gpu=', torch.cuda.get_device_name(0) if torch.cuda.is_available() else 'CPU')"
 
 echo "===== Validate uploaded ER graph ====="
@@ -88,7 +91,7 @@ if [[ "$MODE" == "all" || "$MODE" == "semantic" ]]; then
   if [[ "$RESUME" -eq 1 && -d "runs/${DATASET}/${SEMANTIC_RUN_ID}" ]]; then
     SEMANTIC_RESUME=(--resume)
   fi
-  echo "===== SemanticConvE: feature-only primary model plus six ablations ====="
+  echo "===== SemanticConvE: feature_only primary model plus six ablations ====="
   python codes-New-ConvE/run_semantic_experiments.py \
     --dataset "$DATASET" \
     --data-root Data_Fin \
@@ -127,14 +130,14 @@ if [[ "$MODE" == "all" || "$MODE" == "comparison" ]]; then
   if [[ "$RESUME" -eq 1 && -d "runs/${DATASET}/${COMPARISON_RUN_ID}" ]]; then
     COMPARISON_RESUME=(--resume)
   fi
-  echo "===== Comparison models: all baselines except KCP-ER ====="
+  echo "===== Comparison models: explicit ID-only baselines, no KCP-ER ====="
   python comparison_models/run_v9_comparison_experiments.py \
     --dataset "$DATASET" \
     --data-root Data_Fin \
     --graph-subdir er_graph \
     --run-id "$COMPARISON_RUN_ID" \
     --seeds "$SEEDS" \
-    --models all \
+    --models "$COMPARISON_MODELS" \
     --top-ks "$TOP_KS" \
     --cuda auto \
     "${COMPARISON_RESUME[@]}"

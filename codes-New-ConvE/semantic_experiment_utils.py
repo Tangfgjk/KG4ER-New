@@ -12,7 +12,7 @@ from pathlib import Path
 from typing import Any, Iterable, List, Sequence
 
 
-MODEL_VERSION = "semantic_conve_vfin7_feature_only_no_sequence"
+MODEL_VERSION = "semantic_conve_vfin8_feature_only_no_sequence"
 
 VALID_ABLATIONS = [
     "id_only",
@@ -48,7 +48,7 @@ DEFAULT_DATASETS = [
 ]
 
 # Use a regular recommendation-length grid for every experiment and report.
-DEFAULT_TOP_KS = list(range(10, 101, 10))
+DEFAULT_TOP_KS = list(range(5, 101, 5))
 
 
 def code_dir() -> Path:
