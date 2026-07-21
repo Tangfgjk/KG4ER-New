@@ -18,15 +18,15 @@ class SemanticSummaryTest(unittest.TestCase):
     def test_collect_seed_reads_ablation_directory(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             run_dir = Path(tmp)
-            seed_dir = run_dir / "SemanticConvE_no_semantic" / "seed2024"
+            seed_dir = run_dir / "SemanticConvE_feature_only" / "seed2024"
             self.write_json(seed_dir / "eval" / "metrics.json", {"ACC": {"10": {"mean": 0.7}}, "NOV": {"10": {"mean": 0.9}}})
             self.write_json(seed_dir / "metrics.json", {"training_seconds": 12.5})
             self.write_json(seed_dir / "semantic_conve_inference.json", {"inference_seconds": 1.25})
 
-            row = collect_seed(run_dir, 2024, [10], "no_semantic")
+            row = collect_seed(run_dir, 2024, [10], "feature_only")
 
             self.assertIsNotNone(row)
-            self.assertEqual(row["ablation"], "no_semantic")
+            self.assertEqual(row["ablation"], "feature_only")
             self.assertEqual(row["ACC@10"], 0.7)
             self.assertEqual(row["NOV@10"], 0.9)
             self.assertEqual(row["training_seconds"], 12.5)
@@ -36,8 +36,8 @@ class SemanticSummaryTest(unittest.TestCase):
     def test_collects_gate_values_per_seed_and_summarizes(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             run_dir = Path(tmp)
-            seed2024 = run_dir / "SemanticConvE" / "seed2024"
-            seed2025 = run_dir / "SemanticConvE" / "seed2025"
+            seed2024 = run_dir / "SemanticConvE_feature_only" / "seed2024"
+            seed2025 = run_dir / "SemanticConvE_feature_only" / "seed2025"
             self.write_json(
                 seed2024 / "gate_values.json",
                 {"gate_values": {"uid": {"semantic": 0.4, "pedagogical": 0.6, "cluster": 0.8}}},
@@ -47,7 +47,7 @@ class SemanticSummaryTest(unittest.TestCase):
                 {"gate_values": {"uid": {"semantic": 0.6, "pedagogical": 0.8, "cluster": 1.0}}},
             )
 
-            rows = collect_gate_rows(run_dir, [2024, 2025], ["full"])
+            rows = collect_gate_rows(run_dir, [2024, 2025], ["feature_only"])
             summaries = summarize_gate_rows(rows)
 
             self.assertEqual(len(rows), 6)

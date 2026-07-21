@@ -40,7 +40,7 @@ def metric_value(metrics: Dict[str, Any], metric: str, top_k: int) -> float | No
         return None
 
 
-def collect_seed(run_dir: Path, seed: int, top_ks: List[int], ablation: str = "full") -> Dict[str, Any] | None:
+def collect_seed(run_dir: Path, seed: int, top_ks: List[int], ablation: str = "feature_only") -> Dict[str, Any] | None:
     seed_dir = run_dir / ablation_model_dir(ablation) / f"seed{seed}"
     eval_metrics = maybe_read_json(seed_dir / "eval" / "metrics.json")
     if not eval_metrics:

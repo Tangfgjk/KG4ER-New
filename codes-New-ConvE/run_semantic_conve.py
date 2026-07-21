@@ -170,7 +170,7 @@ def load_checkpoint(
             f"Checkpoint model_version is incompatible: {checkpoint_version!r} != {MODEL_VERSION!r}. "
             "Please start a new run-id because relation encoding has changed."
         )
-    checkpoint_ablation = checkpoint.get("ablation", "full")
+    checkpoint_ablation = checkpoint.get("ablation", "feature_only")
     if checkpoint_ablation != expected_ablation:
         raise RuntimeError(
             f"Checkpoint ablation is incompatible: {checkpoint_ablation!r} != {expected_ablation!r}. "
@@ -223,7 +223,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--negative-ratio", "--negative_ratio", dest="negative_ratio", type=int, default=5)
     parser.add_argument("--seed", type=int, default=2024)
     parser.add_argument("--cuda", default="auto")
-    parser.add_argument("--ablation", choices=sorted(VALID_MODEL_ABLATIONS), default="full")
+    parser.add_argument("--ablation", choices=sorted(VALID_MODEL_ABLATIONS), default="feature_only")
     parser.add_argument("--deterministic", action="store_true")
     parser.add_argument("--resume", action="store_true")
     parser.add_argument("--include-test-triples", "--include_test_triples", dest="include_test_triples", action="store_true", default=False)
@@ -370,8 +370,8 @@ def main() -> None:
             "dataset": args.dataset_name,
             "seed": args.seed,
             "ablation": args.ablation,
-            "full_relation_encoding": "relation ID embedding + residual self-attention over relation type and continuous strength tokens",
-            "relation_id_embedding_used": True,
+            "relation_encoding": "shared relation-text Bi-GRU embedding plus a projected continuous strength feature",
+            "relation_id_embedding_used": args.ablation == "feature_only_relation_id",
             "relation_type_to_id": bundle.metadata.get("relation_type_to_id"),
         },
     )

@@ -16,10 +16,6 @@ FORGETTING = "forgetting"
 VALID_TERMS = (MASTERY, SEQUENCE, FORGETTING)
 
 GRAPH_ABLATION_CONFIGS: Dict[str, Dict[str, Any]] = {
-    "full": {
-        "active_terms": (MASTERY, SEQUENCE, FORGETTING),
-        "remove_relation_prefix": None,
-    },
     "no_mastery": {
         "active_terms": (SEQUENCE, FORGETTING),
         "remove_relation_prefix": "mlkc",
@@ -282,8 +278,6 @@ def prepare_semantic_ablation_graph(
 ) -> Dict[str, Any]:
     if ablation not in GRAPH_ABLATION_CONFIGS:
         raise ValueError(f"Unknown graph ablation: {ablation}")
-    if ablation == "full":
-        raise ValueError("full uses the original graph path and does not need graph ablation data")
     if int(top_k_rec) <= 0:
         raise ValueError("top_k_rec must be positive")
 

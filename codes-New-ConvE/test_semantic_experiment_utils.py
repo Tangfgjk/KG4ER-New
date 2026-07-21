@@ -73,14 +73,13 @@ class SemanticExperimentUtilsTest(unittest.TestCase):
 
                 os.chdir(cwd)
 
-    def test_model_version_marks_compact_raw_concat_mlp(self) -> None:
-        self.assertIn("v11_2", MODEL_VERSION)
-        self.assertIn("compact_raw_concat_mlp", MODEL_VERSION)
+    def test_model_version_marks_feature_only_workflow(self) -> None:
+        self.assertIn("vfin7", MODEL_VERSION)
+        self.assertIn("feature_only", MODEL_VERSION)
 
-    def test_ablation_model_dir_keeps_full_backward_compatible(self) -> None:
-        self.assertEqual(ablation_model_dir("full"), "SemanticConvE")
-        self.assertEqual(ablation_model_dir("no_semantic"), "SemanticConvE_no_semantic")
-        self.assertEqual(ablation_model_dir("no_forgetting"), "SemanticConvE_no_forgetting")
+    def test_ablation_model_dir_uses_explicit_formal_name(self) -> None:
+        self.assertEqual(ablation_model_dir("feature_only"), "SemanticConvE_feature_only")
+        self.assertEqual(ablation_model_dir("feature_only_no_forgetting"), "SemanticConvE_feature_only_no_forgetting")
 
     def test_parse_ablation_list_expands_all_keyword(self) -> None:
         ablations = parse_ablation_list("all")
@@ -113,7 +112,10 @@ class SemanticExperimentUtilsTest(unittest.TestCase):
         )
 
     def test_parse_ablation_list_keeps_explicit_order(self) -> None:
-        self.assertEqual(parse_ablation_list("full,no_cluster"), ["full", "no_cluster"])
+        self.assertEqual(
+            parse_ablation_list("feature_only,id_only"),
+            ["feature_only", "id_only"],
+        )
 
     def test_parse_args_defaults_to_raw_conve_score(self) -> None:
         old_argv = sys.argv
@@ -128,7 +130,7 @@ class SemanticExperimentUtilsTest(unittest.TestCase):
     def test_test_command_passes_forgetting_score_weight(self) -> None:
         args = Namespace(dataset="Eedi", cuda="auto", forgetting_score_weight=0.0, forgetting_exercise_batch_size=128)
 
-        command = command_test(args, Path("graph"), Path("seed"), "full")
+        command = command_test(args, Path("graph"), Path("seed"), "feature_only")
 
         self.assertIn("--forgetting-score-weight", command)
         self.assertIn("0.0", command)

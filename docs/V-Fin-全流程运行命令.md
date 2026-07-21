@@ -14,16 +14,14 @@ SemanticConvE 消融实验和对比模型、续跑与统计结果的完整流程
 正式 SemanticConvE 实验包含：
 
 ```text
-full
+feature_only
 id_only
-no_theta
-no_text
-no_exercise_ped
-no_relation_features
-no_mastery
-no_forgetting
-no_seq
-no_type_aware_scoring
+feature_only_relation_id
+feature_only_learner_id
+feature_only_exercise_id
+feature_only_no_mastery
+feature_only_no_forgetting
+feature_only_no_seq
 ```
 
 对比模型包括：
@@ -136,7 +134,7 @@ Data_Fin/<dataset>/er_graph/
 
 ```powershell
 $seeds = "2024,2025,2026,2027,2028"
-$semanticAblations = "full,id_only,no_theta,no_text,no_exercise_ped,no_relation_features,no_mastery,no_forgetting,no_seq,no_type_aware_scoring"
+$semanticAblations = "feature_only,id_only,feature_only_relation_id,feature_only_learner_id,feature_only_exercise_id,feature_only_no_mastery,feature_only_no_forgetting,feature_only_no_seq"
 ```
 
 ## 6. SemanticConvE 完整模型与消融实验

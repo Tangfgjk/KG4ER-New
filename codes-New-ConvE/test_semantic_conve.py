@@ -152,7 +152,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--checkpoint", default="best.pt")
     parser.add_argument("--output-file", type=Path, default=None)
     parser.add_argument("--cuda", default="auto")
-    parser.add_argument("--ablation", choices=sorted(VALID_MODEL_ABLATIONS), default="full")
+    parser.add_argument("--ablation", choices=sorted(VALID_MODEL_ABLATIONS), default="feature_only")
     parser.add_argument("--batch-size", type=int, default=256)
     parser.add_argument("--embedding-dim", "--embedding_dim", dest="embedding_dim", type=int, default=200)
     parser.add_argument("--embedding-shape1", "--embedding_shape1", dest="embedding_shape1", type=int, default=20)
@@ -186,7 +186,7 @@ def main() -> None:
 
     checkpoint_path = args.save_path / args.checkpoint
     checkpoint = torch.load(checkpoint_path, map_location=device)
-    checkpoint_ablation = checkpoint.get("ablation", "full")
+    checkpoint_ablation = checkpoint.get("ablation", "feature_only")
     if checkpoint_ablation != args.ablation:
         raise RuntimeError(
             f"Checkpoint ablation is incompatible: {checkpoint_ablation!r} != {args.ablation!r}. "
@@ -201,8 +201,8 @@ def main() -> None:
     rec_id = bundle.relation2id["rec"]
     rec_relation = torch.tensor([rec_id], dtype=torch.long, device=device)
     users = users_from_triples(args.data_path)
-    type_aware_scoring = args.ablation != "no_type_aware_scoring"
-    use_forgetting_score = args.forgetting_score_weight > 0 and args.ablation != "no_forgetting"
+    type_aware_scoring = True
+    use_forgetting_score = args.forgetting_score_weight > 0 and args.ablation != "feature_only_no_forgetting"
     exfr_ids = None
     exfr_mask = None
     exfr_coverage = 0.0
@@ -256,9 +256,8 @@ def main() -> None:
             "forgetting_exfr_coverage": round(exfr_coverage, 6),
             "type_aware_scoring": type_aware_scoring,
             "scoring": (
-                "type-aware: rec scores are computed only over exercise entities ex0..exN unless "
-                "ablation=no_type_aware_scoring scores all entities and filters exercise columns; "
-                "optional KG4EX-style forgetting branch adds weight * score(ex+exfr, rec, ex)"
+                "type-aware: rec scores are computed only over exercise entities ex0..exN; "
+                "the optional forgetting branch adds weight * score(ex+exfr, rec, ex)"
             ),
         },
     )

@@ -12,42 +12,10 @@ from pathlib import Path
 from typing import Any, Iterable, List, Sequence
 
 
-MODEL_VERSION = "semantic_conve_v11_2_compact_raw_concat_mlp"
+MODEL_VERSION = "semantic_conve_vfin7_feature_only"
 
 VALID_ABLATIONS = [
-    "full",
-    "full_state_hybrid",
-    "irt_only_ped",
-    "stat_only_ped",
-    "no_irt",
-    "no_stat_ped",
-    "no_mastery",
-    "no_forgetting",
-    "no_seq",
-    "id_head_reference",
-    "no_content_entity",
-    "no_relation_aware",
-    "no_type_aware_scoring",
-    "no_semantic",
-    "no_text_semantic",
-    "no_concept_semantic",
-    "no_exercise_semantic",
-    "no_pedagogical",
-    "no_exercise_irt",
-    "no_learner_irt",
-    "no_cluster",
-    "no_relation_strength",
-    "discrete_relation",
-    "hybrid_relation",
-    "relation_id_only",
-    "compact_features",
-    "no_theta",
-    "no_text",
-    "no_exercise_ped",
-    "no_relation_features",
     "id_only",
-    "no_learner_id",
-    "no_learner_relation_id",
     "feature_only",
     "feature_only_relation_id",
     "feature_only_learner_id",
@@ -58,9 +26,6 @@ VALID_ABLATIONS = [
 ]
 
 GRAPH_ABLATIONS = [
-    "no_mastery",
-    "no_forgetting",
-    "no_seq",
     "feature_only_no_mastery",
     "feature_only_no_forgetting",
     "feature_only_no_seq",
@@ -169,8 +134,6 @@ def parse_top_ks(value: str | Sequence[int]) -> List[int]:
 
 
 def ablation_model_dir(ablation: str) -> str:
-    if ablation == "full":
-        return "SemanticConvE"
     return f"SemanticConvE_{ablation}"
 
 

@@ -25,7 +25,6 @@ MODEL_COLORS = {
     "CBF": "#854D0E",
     "SB-CF": "#BE123C",
     "EB-CF": "#4F46E5",
-    "full": "#0057B8",
     "id_only": "#D55E00",
     "feature_only": "#009E73",
     "feature_only_relation_id": "#7C3AED",
@@ -38,7 +37,7 @@ MODEL_COLORS = {
 MODEL_MARKERS = {
     "TransE": "o", "TransE-adv": "s", "RotatE": "^", "DistMult": "D", "ComplEx": "P",
     "CBF": "X", "SB-CF": "v", "EB-CF": "<",
-    "full": "o", "id_only": "s", "feature_only": "^", "feature_only_relation_id": "D",
+    "id_only": "s", "feature_only": "^", "feature_only_relation_id": "D",
     "feature_only_learner_id": "P", "feature_only_exercise_id": "X",
     "feature_only_no_mastery": "v", "feature_only_no_forgetting": "<", "feature_only_no_seq": ">",
 }
@@ -65,7 +64,7 @@ def parse_run_dir(value: str) -> tuple[str, Path]:
 
 
 def model_key(model: str) -> str:
-    return "full" if model == "SemanticConvE" else model.replace("SemanticConvE_", "")
+    return "feature_only" if model == "SemanticConvE" else model.replace("SemanticConvE_", "")
 
 
 def load_rows(label: str, run_dir: Path) -> list[dict]:

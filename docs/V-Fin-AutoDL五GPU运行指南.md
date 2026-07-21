@@ -113,7 +113,7 @@ Do not shut down or release the AutoDL instance while the job is running.
 The script `scripts/run_autodl_vfin_dataset.sh` performs:
 
 1. validation of the uploaded ER graph;
-2. five SemanticConvE variants: `full`, `id_only`, `no_learner_id`, `no_learner_relation_id`, and `feature_only`;
+2. eight formal SemanticConvE variants: `feature_only`, `id_only`, `feature_only_relation_id`, `feature_only_learner_id`, `feature_only_exercise_id`, `feature_only_no_mastery`, `feature_only_no_forgetting`, and `feature_only_no_seq`;
 3. the five variants under both `--include-test-triples` and `--exclude-test-triples` protocols;
 4. one pilot random seed: `2024`;
 5. only the two comparison models: `TransE` and `TransE-adv`;
@@ -170,7 +170,7 @@ The script automatically generates summaries. To run them again for Eedi:
 ```bash
 DS=Eedi
 SEEDS=2024,2025,2026,2027,2028
-ABLATIONS=full,id_only,no_learner_id,no_learner_relation_id,feature_only
+ABLATIONS=feature_only,id_only,feature_only_relation_id,feature_only_learner_id,feature_only_exercise_id,feature_only_no_mastery,feature_only_no_forgetting,feature_only_no_seq
 
 for PROTOCOL in include_test exclude_test; do
   python codes-New-ConvE/summarize_semantic_results.py \
