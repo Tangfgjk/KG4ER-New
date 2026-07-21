@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Run V-Fin6 experiments for one dataset on one AutoDL GPU.
+# Run V-Fin7 no-sequence experiments for one dataset on one AutoDL GPU.
 #
 # Examples:
 #   bash scripts/run_autodl_vfin_dataset.sh Eedi all
@@ -62,16 +62,16 @@ REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$REPO_ROOT"
 
 export WANDB_MODE="${WANDB_MODE:-disabled}"
-ABLATIONS="id_only,feature_only,feature_only_relation_id,feature_only_learner_id,feature_only_exercise_id,feature_only_no_mastery,feature_only_no_forgetting,feature_only_no_seq"
-SEMANTIC_RUN_ID="${DATASET}_vfin6_semantic_${SEED_COUNT}seeds"
-COMPARISON_RUN_ID="${DATASET}_vfin6_comparison_${SEED_COUNT}seeds"
-REPORT_DIR="runs/${DATASET}/${DATASET}_vfin6_report_${SEED_COUNT}seeds"
+ABLATIONS="id_only,feature_only,feature_only_relation_id,feature_only_learner_id,feature_only_exercise_id,feature_only_no_mastery,feature_only_no_forgetting"
+SEMANTIC_RUN_ID="${DATASET}_vfin7_noseq_semantic_${SEED_COUNT}seeds"
+COMPARISON_RUN_ID="${DATASET}_vfin7_noseq_comparison_${SEED_COUNT}seeds"
+REPORT_DIR="runs/${DATASET}/${DATASET}_vfin7_noseq_report_${SEED_COUNT}seeds"
 
 mkdir -p logs
-LOG_FILE="logs/${DATASET}_vfin6_${MODE}_$(date +%Y%m%d_%H%M%S).log"
+LOG_FILE="logs/${DATASET}_vfin7_noseq_${MODE}_$(date +%Y%m%d_%H%M%S).log"
 exec > >(tee -a "$LOG_FILE") 2>&1
 
-echo "===== V-Fin6 workflow ====="
+echo "===== V-Fin7 no-sequence workflow ====="
 echo "dataset=$DATASET mode=$MODE"
 echo "seeds=$SEEDS top_ks=$TOP_KS"
 echo "All training uses triples.txt only; test_triples.txt is evaluation-only."
@@ -88,7 +88,7 @@ if [[ "$MODE" == "all" || "$MODE" == "semantic" ]]; then
   if [[ "$RESUME" -eq 1 && -d "runs/${DATASET}/${SEMANTIC_RUN_ID}" ]]; then
     SEMANTIC_RESUME=(--resume)
   fi
-  echo "===== SemanticConvE: feature-only primary model plus seven ablations ====="
+  echo "===== SemanticConvE: feature-only primary model plus six ablations ====="
   python codes-New-ConvE/run_semantic_experiments.py \
     --dataset "$DATASET" \
     --data-root Data_Fin \

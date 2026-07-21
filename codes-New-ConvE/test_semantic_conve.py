@@ -39,7 +39,7 @@ def users_from_triples(data_path: Path) -> List[str]:
         for line in fp:
             head, relation, tail = line.strip().split("\t")
             if tail.startswith("uid") and (
-                relation.startswith("mlkc") or relation.startswith("pkc") or relation.startswith("exfr")
+                relation.startswith("mlkc") or relation.startswith("exfr")
             ):
                 users.add(tail)
     return sorted(users, key=lambda uid: int(uid[3:]) if uid.startswith("uid") and uid[3:].isdigit() else uid)

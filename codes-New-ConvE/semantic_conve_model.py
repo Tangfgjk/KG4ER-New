@@ -1,4 +1,4 @@
-"""Feature-only SemanticConvE and its eight formal ablation variants.
+"""Feature-only SemanticConvE and its six formal ablation variants.
 
 The formal primary model is ``feature_only``: learners use MIRT theta,
 exercises use shared-text plus MIRT features, concepts retain only KC IDs, and
@@ -26,7 +26,6 @@ VALID_MODEL_ABLATIONS = {
     "feature_only_exercise_id",
     "feature_only_no_mastery",
     "feature_only_no_forgetting",
-    "feature_only_no_seq",
 }
 
 
@@ -279,7 +278,6 @@ class SemanticConvE(nn.Module):
             "feature_only_exercise_id",
             "feature_only_no_mastery",
             "feature_only_no_forgetting",
-            "feature_only_no_seq",
         }
 
     def _uses_learner_id_only(self) -> bool:
@@ -292,7 +290,6 @@ class SemanticConvE(nn.Module):
             "feature_only_exercise_id",
             "feature_only_no_mastery",
             "feature_only_no_forgetting",
-            "feature_only_no_seq",
         }
 
     def _uses_relation_id_only(self) -> bool:
@@ -305,7 +302,6 @@ class SemanticConvE(nn.Module):
             "feature_only_learner_id",
             "feature_only_no_mastery",
             "feature_only_no_forgetting",
-            "feature_only_no_seq",
         }
 
     def _uses_exercise_id_only(self) -> bool:

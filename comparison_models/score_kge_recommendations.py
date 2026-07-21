@@ -42,18 +42,15 @@ def load_dict(path):
 
 def load_test_relations(path):
     uid_mlkc = {}
-    uid_pkc = {}
     uid_exfr = {}
     with path.open("r", encoding="utf-8") as fp:
         for line in fp:
             head, relation, uid = line.strip().split("\t")
             if relation.startswith("mlkc"):
                 uid_mlkc.setdefault(uid, {})[head] = relation
-            elif relation.startswith("pkc"):
-                uid_pkc.setdefault(uid, {})[head] = relation
             elif relation.startswith("exfr"):
                 uid_exfr.setdefault(uid, {})[head] = relation
-    return uid_mlkc, uid_pkc, uid_exfr
+    return uid_mlkc, uid_exfr
 
 
 def transe(head, relation, tail, gamma):
@@ -130,7 +127,7 @@ def score_exercise_candidate(
         )
     raise RuntimeError(
         "Non-TransE models must be scored with score_native_er_candidates so that "
-        "mlkc/pkc/exfr first infer a learner-state prototype rather than form "
+        "mlkc/exfr first infer a learner-state prototype rather than form "
         "schema-invalid triples ending at an exercise."
     )
 
@@ -235,8 +232,8 @@ def score_native_er_candidates(
 ):
     """Use graph-valid cognitive triples to infer a learner state before rec scoring.
 
-    The original graph defines (kc, mlkc/pkc, uid) and (ex, exfr, uid), not
-    (kc, mlkc/pkc, ex) or (ex, exfr, ex).  For non-TransE KGE models, each
+    The original graph defines (kc, mlkc, uid) and (ex, exfr, uid), not
+    (kc, mlkc, ex) or (ex, exfr, ex). For non-TransE KGE models, each
     cognitive pair therefore produces a model-native estimate of the tail
     learner state.  The exercise-specific forgetting estimate is added to the
     shared KC-derived learner state before scoring (state, rec, exercise).
@@ -291,17 +288,16 @@ def main():
     relation2id = load_dict(args.data_dir / "relations.dict")
     entity_embedding = np.load(args.embedding_dir / "entity_embedding.npy")
     relation_embedding = np.load(args.embedding_dir / "relation_embedding.npy")
-    uid_mlkc, uid_pkc, uid_exfr = load_test_relations(args.data_dir / "test_triples.txt")
+    uid_mlkc, uid_exfr = load_test_relations(args.data_dir / "test_triples.txt")
 
     scorer = score_fn(args.model)
     uid_ex_scores = []
-    user_ids = set(uid_mlkc) | set(uid_pkc) | set(uid_exfr)
+    user_ids = set(uid_mlkc) | set(uid_exfr)
     for uid in sorted(user_ids, key=lambda value: int(value[3:]) if value.startswith("uid") else value):
         scores = []
         mlkc_items = list(uid_mlkc.get(uid, {}).items())
-        pkc_items = list(uid_pkc.get(uid, {}).items())
         exfr_items = uid_exfr.get(uid, {})
-        cognitive_items = mlkc_items + pkc_items
+        cognitive_items = mlkc_items
         exercises = [f"ex{exercise_idx}" for exercise_idx in range(len(q_matrix))]
         if args.model in {"TransE", "TransE-adv"}:
             for exercise in exercises:
@@ -347,7 +343,7 @@ def main():
                 "model_native_tail_state_then_rec" if args.model not in {"TransE", "TransE-adv"} else None
             ),
             "candidate_type": "exercise_only",
-            "cognitive_relations": ["mlkc", "pkc", "exfr"],
+            "cognitive_relations": ["mlkc", "exfr"],
         },
         args.output_dir / "scoring_protocol.json",
     )

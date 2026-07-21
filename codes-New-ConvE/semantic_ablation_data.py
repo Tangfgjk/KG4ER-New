@@ -11,36 +11,17 @@ import numpy as np
 
 
 MASTERY = "mastery"
-SEQUENCE = "sequence"
 FORGETTING = "forgetting"
-VALID_TERMS = (MASTERY, SEQUENCE, FORGETTING)
+VALID_TERMS = (MASTERY, FORGETTING)
 
 GRAPH_ABLATION_CONFIGS: Dict[str, Dict[str, Any]] = {
-    "no_mastery": {
-        "active_terms": (SEQUENCE, FORGETTING),
-        "remove_relation_prefix": "mlkc",
-    },
-    "no_forgetting": {
-        "active_terms": (MASTERY, SEQUENCE),
-        "remove_relation_prefix": "exfr",
-    },
-    "no_seq": {
-        "active_terms": (MASTERY, FORGETTING),
-        "remove_relation_prefix": "pkc",
-    },
-    # These variants use the same graph-level cognitive ablation as their
-    # no_* counterparts, while SemanticConvE uses feature-only representations.
     "feature_only_no_mastery": {
-        "active_terms": (SEQUENCE, FORGETTING),
+        "active_terms": (FORGETTING,),
         "remove_relation_prefix": "mlkc",
     },
     "feature_only_no_forgetting": {
-        "active_terms": (MASTERY, SEQUENCE),
+        "active_terms": (MASTERY,),
         "remove_relation_prefix": "exfr",
-    },
-    "feature_only_no_seq": {
-        "active_terms": (MASTERY, FORGETTING),
-        "remove_relation_prefix": "pkc",
     },
 }
 
@@ -51,7 +32,6 @@ SHARED_DATA_FILES = (
     "entities.dict",
     "relations.dict",
     "stu2know_mastery.json",
-    "stu2know_seq.json",
     "stu2know_forget.json",
     "stu2ex_forget.json",
 )
@@ -104,33 +84,26 @@ def load_q_matrix(path: Path) -> List[List[int]]:
 
 def calculate_recommendation_scores(
     mastery: Sequence[Sequence[float]],
-    sequence: Sequence[Sequence[float]],
     exercise_forgetting: Sequence[Sequence[float]],
     q_matrix: Sequence[Sequence[int]],
     active_terms: Sequence[str] = VALID_TERMS,
     delta_1: float = 0.8,
     delta_2: float = 0.8,
-    sequence_term: str = "one_minus_cos_sq",
 ) -> List[List[float]]:
     active_terms = parse_active_terms(active_terms)
-    if sequence_term not in {"one_minus_cos_sq", "legacy_cos_sq"}:
-        raise ValueError(f"Unknown sequence term: {sequence_term}")
     student_count = len(mastery)
-    if len(sequence) != student_count or len(exercise_forgetting) != student_count:
-        raise ValueError("Mastery, sequence, and forgetting student counts must match")
+    if len(exercise_forgetting) != student_count:
+        raise ValueError("Mastery and forgetting student counts must match")
 
     all_scores: List[List[float]] = []
     for student_idx in range(student_count):
         mastery_row = mastery[student_idx]
-        sequence_row = np.asarray(sequence[student_idx], dtype=float)
         forgetting_row = exercise_forgetting[student_idx]
         if len(forgetting_row) != len(q_matrix):
             raise ValueError(
                 f"Student {student_idx} forgetting length {len(forgetting_row)} "
                 f"does not match Q rows {len(q_matrix)}"
             )
-        if len(mastery_row) != len(sequence_row):
-            raise ValueError(f"Student {student_idx} mastery and sequence lengths must match")
 
         student_scores: List[float] = []
         for exercise_idx, q_values in enumerate(q_matrix):
@@ -146,12 +119,6 @@ def calculate_recommendation_scores(
                     if int(is_linked) == 1:
                         mastery_product *= float(mastery_row[knowledge_idx])
                 total += (float(delta_1) - mastery_product) ** 2
-
-            if SEQUENCE in active_terms:
-                q_vector = np.asarray(q_values, dtype=float)
-                denominator = np.linalg.norm(q_vector) * np.linalg.norm(sequence_row) + 1e-9
-                cosine_similarity = float(np.dot(q_vector, sequence_row.T) / denominator)
-                total += (1.0 - cosine_similarity) ** 2 if sequence_term == "one_minus_cos_sq" else cosine_similarity**2
 
             if FORGETTING in active_terms:
                 forgetting_value = float(forgetting_row[exercise_idx])
@@ -248,7 +215,6 @@ def expected_manifest(
     top_k_rec: int,
     delta_1: float,
     delta_2: float,
-    sequence_term: str,
 ) -> Dict[str, Any]:
     config = GRAPH_ABLATION_CONFIGS[ablation]
     return {
@@ -260,7 +226,6 @@ def expected_manifest(
         "selection": "smallest_distance_top_k",
         "delta_1": float(delta_1),
         "delta_2": float(delta_2),
-        "sequence_term": sequence_term,
         "top_k_rec": int(top_k_rec),
         "source_dir": str(source_dir.resolve()),
     }
@@ -273,7 +238,6 @@ def prepare_semantic_ablation_graph(
     top_k_rec: int = 10,
     delta_1: float = 0.8,
     delta_2: float = 0.8,
-    sequence_term: str | None = None,
     resume: bool = False,
 ) -> Dict[str, Any]:
     if ablation not in GRAPH_ABLATION_CONFIGS:
@@ -283,15 +247,8 @@ def prepare_semantic_ablation_graph(
 
     source_dir = Path(source_dir).resolve()
     target_dir = Path(target_dir).resolve()
-    if sequence_term is None:
-        source_manifest_path = source_dir / "er_graph_manifest.json"
-        if source_manifest_path.exists():
-            source_manifest = read_json(source_manifest_path)
-            sequence_term = str(source_manifest.get("recommendation", {}).get("sequence_term", "one_minus_cos_sq"))
-        else:
-            sequence_term = "one_minus_cos_sq"
     manifest_path = target_dir / "ablation_manifest.json"
-    base_manifest = expected_manifest(source_dir, ablation, top_k_rec, delta_1, delta_2, sequence_term)
+    base_manifest = expected_manifest(source_dir, ablation, top_k_rec, delta_1, delta_2)
 
     if resume and manifest_path.exists():
         existing = read_json(manifest_path)
@@ -316,18 +273,15 @@ def prepare_semantic_ablation_graph(
 
     config = GRAPH_ABLATION_CONFIGS[ablation]
     mastery = read_json(source_dir / "stu2know_mastery.json")
-    sequence = read_json(source_dir / "stu2know_seq.json")
     exercise_forgetting = read_json(source_dir / "stu2ex_forget.json")
     q_matrix = load_q_matrix(source_dir / "Q.txt")
     scores = calculate_recommendation_scores(
         mastery=mastery,
-        sequence=sequence,
         exercise_forgetting=exercise_forgetting,
         q_matrix=q_matrix,
         active_terms=config["active_terms"],
         delta_1=delta_1,
         delta_2=delta_2,
-        sequence_term=sequence_term,
     )
     write_json(target_dir / "stu2ex_recommend_full_precision.json", scores)
     rounded_scores = [[round(value, 6) for value in row] for row in scores]

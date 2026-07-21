@@ -250,7 +250,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--dataset", required=True)
     parser.add_argument("--run-id", default=None)
     parser.add_argument("--seeds", default="2024")
-    parser.add_argument("--ablations", default="all", help="Comma-separated ablations or all. Default runs the V10-attn ConvE suite.")
+    parser.add_argument("--ablations", default="all", help="Comma-separated formal ablations or all.")
     parser.add_argument("--epochs", type=int, default=25)
     parser.add_argument("--bs", type=int, default=1024)
     parser.add_argument("--learning-rate", type=float, default=0.001)

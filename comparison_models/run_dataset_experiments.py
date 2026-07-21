@@ -29,7 +29,6 @@ DATASET_DIRS = {
 REQUIRED_DATA_FILES = [
     "Q.txt",
     "stu2know_mastery.json",
-    "stu2know_seq.json",
     "stu2know_forget.json",
     "stu2ex_forget.json",
     "stu2ex_recommend.json",

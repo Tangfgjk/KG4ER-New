@@ -76,6 +76,7 @@ class SemanticExperimentUtilsTest(unittest.TestCase):
     def test_model_version_marks_feature_only_workflow(self) -> None:
         self.assertIn("vfin7", MODEL_VERSION)
         self.assertIn("feature_only", MODEL_VERSION)
+        self.assertIn("no_sequence", MODEL_VERSION)
 
     def test_ablation_model_dir_uses_explicit_formal_name(self) -> None:
         self.assertEqual(ablation_model_dir("feature_only"), "SemanticConvE_feature_only")
@@ -95,19 +96,17 @@ class SemanticExperimentUtilsTest(unittest.TestCase):
                 "feature_only_exercise_id",
                 "feature_only_no_mastery",
                 "feature_only_no_forgetting",
-                "feature_only_no_seq",
             ],
         )
 
     def test_feature_only_cognitive_graph_ablations_are_registered(self) -> None:
         self.assertEqual(
             parse_ablation_list(
-                "feature_only_no_mastery,feature_only_no_forgetting,feature_only_no_seq"
+                "feature_only_no_mastery,feature_only_no_forgetting"
             ),
             [
                 "feature_only_no_mastery",
                 "feature_only_no_forgetting",
-                "feature_only_no_seq",
             ],
         )
 

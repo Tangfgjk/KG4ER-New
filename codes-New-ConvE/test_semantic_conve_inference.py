@@ -18,7 +18,7 @@ class SemanticConvEInferenceHelperTest(unittest.TestCase):
             (data_dir / "test_triples.txt").write_text(
                 "\n".join(
                     [
-                        "kc0\tpkc0.50\tuid3",
+                        "kc0\tmlkc0.50\tuid3",
                         "ex0\texfr0.20\tuid1",
                         "ex1\texfr0.80\tuid3",
                     ]

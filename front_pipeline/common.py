@@ -275,7 +275,7 @@ def relation_label(prefix: str, value: float) -> str:
 
 def write_relations(path: Path) -> None:
     rows = ["rec"]
-    for prefix in ["mlkc", "pkc", "exfr"]:
+    for prefix in ["mlkc", "exfr"]:
         rows.extend(f"{prefix}{value / 100:.2f}" for value in range(101))
     path.parent.mkdir(parents=True, exist_ok=True)
     with path.open("w", encoding="utf-8") as fp:

@@ -12,7 +12,7 @@ from pathlib import Path
 from typing import Any, Iterable, List, Sequence
 
 
-MODEL_VERSION = "semantic_conve_vfin7_feature_only"
+MODEL_VERSION = "semantic_conve_vfin7_feature_only_no_sequence"
 
 VALID_ABLATIONS = [
     "id_only",
@@ -22,13 +22,11 @@ VALID_ABLATIONS = [
     "feature_only_exercise_id",
     "feature_only_no_mastery",
     "feature_only_no_forgetting",
-    "feature_only_no_seq",
 ]
 
 GRAPH_ABLATIONS = [
     "feature_only_no_mastery",
     "feature_only_no_forgetting",
-    "feature_only_no_seq",
 ]
 
 DEFAULT_ALL_ABLATIONS = [
@@ -39,7 +37,6 @@ DEFAULT_ALL_ABLATIONS = [
     "feature_only_exercise_id",
     "feature_only_no_mastery",
     "feature_only_no_forgetting",
-    "feature_only_no_seq",
 ]
 
 DEFAULT_DATASETS = [

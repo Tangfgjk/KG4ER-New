@@ -37,7 +37,6 @@ triples.txt
 test_triples.txt
 Q.txt
 stu2know_mastery.json
-stu2know_seq.json
 stu2know_forget.json
 stu2ex_forget.json
 stu2ex_recommend.json
@@ -53,7 +52,7 @@ Run these commands in the AutoDL JupyterLab terminal:
 
 ```bash
 cd /root/autodl-tmp
-git clone -b V-Fin3 --single-branch https://github.com/Tangfgjk/KG4ER-New.git
+git clone -b V-Fin7 --single-branch https://github.com/Tangfgjk/KG4ER-New.git
 cd KG4ER-New
 
 # Keep the CUDA-enabled PyTorch supplied by the image.
@@ -68,8 +67,8 @@ The last command must display `True` and the GPU name. To update an existing clo
 ```bash
 cd /root/autodl-tmp/KG4ER-New
 git fetch origin
-git checkout V-Fin3
-git pull --ff-only origin V-Fin3
+git checkout V-Fin7
+git pull --ff-only origin V-Fin7
 ```
 
 ## 4. Validate the Uploaded Data
@@ -113,7 +112,7 @@ Do not shut down or release the AutoDL instance while the job is running.
 The script `scripts/run_autodl_vfin_dataset.sh` performs:
 
 1. validation of the uploaded ER graph;
-2. eight formal SemanticConvE variants: `feature_only`, `id_only`, `feature_only_relation_id`, `feature_only_learner_id`, `feature_only_exercise_id`, `feature_only_no_mastery`, `feature_only_no_forgetting`, and `feature_only_no_seq`;
+2. seven formal SemanticConvE variants: `feature_only`, `id_only`, `feature_only_relation_id`, `feature_only_learner_id`, `feature_only_exercise_id`, `feature_only_no_mastery`, and `feature_only_no_forgetting`;
 3. the five variants under both `--include-test-triples` and `--exclude-test-triples` protocols;
 4. one pilot random seed: `2024`;
 5. only the two comparison models: `TransE` and `TransE-adv`;
@@ -170,7 +169,7 @@ The script automatically generates summaries. To run them again for Eedi:
 ```bash
 DS=Eedi
 SEEDS=2024,2025,2026,2027,2028
-ABLATIONS=feature_only,id_only,feature_only_relation_id,feature_only_learner_id,feature_only_exercise_id,feature_only_no_mastery,feature_only_no_forgetting,feature_only_no_seq
+ABLATIONS=feature_only,id_only,feature_only_relation_id,feature_only_learner_id,feature_only_exercise_id,feature_only_no_mastery,feature_only_no_forgetting
 
 for PROTOCOL in include_test exclude_test; do
   python codes-New-ConvE/summarize_semantic_results.py \

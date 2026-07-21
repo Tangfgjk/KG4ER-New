@@ -21,7 +21,6 @@ feature_only_learner_id
 feature_only_exercise_id
 feature_only_no_mastery
 feature_only_no_forgetting
-feature_only_no_seq
 ```
 
 对比模型包括：
@@ -91,12 +90,9 @@ python front_pipeline\run_front_pipeline.py `
   --data-fin-root Data_Fin `
   --mirt-epochs 70 `
   --mirt-batch-size 1024 `
-  --sequence-epochs 30 `
-  --sequence-batch-size 32 `
   --ektm-epochs 30 `
   --ektm-batch-size 16 `
   --device cuda `
-  --sequence-term one_minus_cos_sq `
   --force
 ```
 
@@ -107,10 +103,8 @@ python front_pipeline\run_front_pipeline.py `
   --datasets $ds `
   --data-fin-root Data_Fin `
   --mirt-epochs 70 `
-  --sequence-epochs 30 `
   --ektm-epochs 30 `
   --device cuda `
-  --sequence-term one_minus_cos_sq
 ```
 
 生成结果位于：
@@ -134,7 +128,7 @@ Data_Fin/<dataset>/er_graph/
 
 ```powershell
 $seeds = "2024,2025,2026,2027,2028"
-$semanticAblations = "feature_only,id_only,feature_only_relation_id,feature_only_learner_id,feature_only_exercise_id,feature_only_no_mastery,feature_only_no_forgetting,feature_only_no_seq"
+$semanticAblations = "feature_only,id_only,feature_only_relation_id,feature_only_learner_id,feature_only_exercise_id,feature_only_no_mastery,feature_only_no_forgetting"
 ```
 
 ## 6. SemanticConvE 完整模型与消融实验

@@ -8,7 +8,6 @@ import numpy as np
 
 from common import (
     copy_file,
-    cosine_similarity,
     data_fin_root,
     front_dir,
     graph_dir,
@@ -29,7 +28,6 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--delta-1", type=float, default=0.8)
     parser.add_argument("--delta-2", type=float, default=0.8)
     parser.add_argument("--top-k-rec", type=int, default=10)
-    parser.add_argument("--sequence-term", choices=["one_minus_cos_sq", "legacy_cos_sq"], default="one_minus_cos_sq")
     parser.add_argument("--force", action="store_true")
     return parser.parse_args()
 
@@ -39,15 +37,13 @@ def mastery_product(mastery: np.ndarray, q_row: np.ndarray) -> float:
     return float(np.prod(mastery[concepts])) if len(concepts) else 0.0
 
 
-def recommendation_distances(mastery: np.ndarray, sequence: np.ndarray, exercise_forget: np.ndarray, q: np.ndarray, delta_1: float, delta_2: float, sequence_term: str) -> np.ndarray:
+def recommendation_distances(mastery: np.ndarray, exercise_forget: np.ndarray, q: np.ndarray, delta_1: float, delta_2: float) -> np.ndarray:
     result = np.zeros((mastery.shape[0], q.shape[0]), dtype=np.float64)
     for uid in range(mastery.shape[0]):
         for ex in range(q.shape[0]):
             term_mastery = (float(delta_1) - mastery_product(mastery[uid], q[ex])) ** 2
-            similarity = cosine_similarity(q[ex], sequence[uid])
-            term_sequence = (1.0 - similarity) ** 2 if sequence_term == "one_minus_cos_sq" else similarity**2
             term_forget = (float(delta_2) - float(exercise_forget[uid, ex])) ** 2
-            result[uid, ex] = np.sqrt(term_mastery + term_sequence + term_forget)
+            result[uid, ex] = np.sqrt(term_mastery + term_forget)
     return result
 
 
@@ -59,15 +55,13 @@ def write_entities(path: Path, student_count: int, concept_count: int, exercise_
             fp.write(f"{index}\t{name}\n")
 
 
-def write_triples(path: Path, users: list[int], mastery: np.ndarray, sequence: np.ndarray, ex_forget: np.ndarray, q: np.ndarray, distances: np.ndarray, top_k_rec: int, include_rec: bool) -> dict[str, int]:
-    counts = {"mlkc": 0, "pkc": 0, "exfr": 0, "rec": 0}
+def write_triples(path: Path, users: list[int], mastery: np.ndarray, ex_forget: np.ndarray, q: np.ndarray, distances: np.ndarray, top_k_rec: int, include_rec: bool) -> dict[str, int]:
+    counts = {"mlkc": 0, "exfr": 0, "rec": 0}
     with path.open("w", encoding="utf-8") as fp:
         for uid in users:
             for kc in range(mastery.shape[1]):
                 fp.write(f"kc{kc}\t{relation_label('mlkc', mastery[uid, kc])}\tuid{uid}\n")
-                fp.write(f"kc{kc}\t{relation_label('pkc', sequence[uid, kc])}\tuid{uid}\n")
                 counts["mlkc"] += 1
-                counts["pkc"] += 1
             for ex in range(q.shape[0]):
                 fp.write(f"ex{ex}\t{relation_label('exfr', ex_forget[uid, ex])}\tuid{uid}\n")
                 counts["exfr"] += 1
@@ -92,15 +86,14 @@ def main() -> None:
     output.mkdir(parents=True, exist_ok=True)
 
     mastery = read_matrix_json(front / "stu2know_mastery.json")
-    sequence = read_matrix_json(front / "stu2know_seq.json")
     know_forget = read_matrix_json(front / "stu2know_forget.json")
     expected = (raw.student_count, raw.concept_count)
-    for name, value in [("mastery", mastery), ("sequence", sequence), ("knowledge_forgetting", know_forget)]:
+    for name, value in [("mastery", mastery), ("knowledge_forgetting", know_forget)]:
         if value.shape != expected:
             raise ValueError(f"{name} shape={value.shape}, expected={expected}")
     q_counts = raw.q_matrix.sum(axis=1).clip(min=1.0)
     ex_forget = np.clip((know_forget @ raw.q_matrix.T) / q_counts[None, :], 0.0, 1.0)
-    distances = recommendation_distances(mastery, sequence, ex_forget, raw.q_matrix, args.delta_1, args.delta_2, args.sequence_term)
+    distances = recommendation_distances(mastery, ex_forget, raw.q_matrix, args.delta_1, args.delta_2)
 
     write_entities(output / "entities.dict", raw.student_count, raw.concept_count, raw.exercise_count)
     write_relations(output / "relations.dict")
@@ -108,7 +101,6 @@ def main() -> None:
     copy_file(raw.root / "evaluation_uid_kc_response.txt", output / f"{raw.name}_uid_kc_response.txt")
     for name, value in [
         ("stu2know_mastery.json", mastery),
-        ("stu2know_seq.json", sequence),
         ("stu2know_forget.json", know_forget),
         ("stu2ex_forget.json", ex_forget),
     ]:
@@ -117,8 +109,8 @@ def main() -> None:
     # later inspection/re-ranking cannot introduce artificial ties.
     write_json(output / "stu2ex_recommend_full_precision.json", distances)
     write_matrix_json(output / "stu2ex_recommend.json", distances, decimals=6)
-    train_counts = write_triples(output / "triples.txt", raw.train_uids, mastery, sequence, ex_forget, raw.q_matrix, distances, args.top_k_rec, True)
-    test_counts = write_triples(output / "test_triples.txt", raw.test_uids, mastery, sequence, ex_forget, raw.q_matrix, distances, args.top_k_rec, False)
+    train_counts = write_triples(output / "triples.txt", raw.train_uids, mastery, ex_forget, raw.q_matrix, distances, args.top_k_rec, True)
+    test_counts = write_triples(output / "test_triples.txt", raw.test_uids, mastery, ex_forget, raw.q_matrix, distances, args.top_k_rec, False)
     source_features = front / "semantic_kg_features"
     if not source_features.exists():
         raise FileNotFoundError("Run front_pipeline/build_semantic_features.py before graph construction")
@@ -127,21 +119,20 @@ def main() -> None:
         output / "er_graph_manifest.json",
         {
             "dataset": raw.name,
-            "version": "raw_front_er_graph_v1",
+            "version": "raw_front_er_graph_no_sequence_v2",
             "raw_dir": raw.root,
             "front_dir": front,
             "split_source": raw.root / "student_split.csv",
             "student_counts": {"train": len(raw.train_uids), "test": len(raw.test_uids)},
-            "state_shapes": {"mastery": list(mastery.shape), "sequence": list(sequence.shape), "forgetting": list(know_forget.shape)},
+            "state_shapes": {"mastery": list(mastery.shape), "forgetting": list(know_forget.shape)},
             "recommendation": {
-                "formula": "sqrt((delta_1 - mastery_product)^2 + sequence_term + (delta_2 - mean_q_forgetting)^2)",
-                "sequence_term": args.sequence_term,
+                "formula": "sqrt((delta_1 - mastery_product)^2 + (delta_2 - mean_q_forgetting)^2)",
                 "ranking_precision": "full precision; rounded JSON is storage-only",
                 "delta_1": args.delta_1,
                 "delta_2": args.delta_2,
                 "top_k_rec": args.top_k_rec,
             },
-            "relations": 304,
+            "relations": 203,
             "triple_counts": {"train": train_counts, "test": test_counts},
             "ranges": {"exercise_forgetting": matrix_stats(ex_forget), "recommendation_distance": matrix_stats(distances)},
         },

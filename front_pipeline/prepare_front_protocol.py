@@ -66,7 +66,7 @@ def main() -> None:
             "seed": args.seed,
             "test_history_policy": args.test_history_policy,
             "shared_parameter_policy": "Only outer_train learners may update shared front-model parameters.",
-            "test_student_policy": "Test students are passed through frozen sequence/EKTM models; Q-MIRT only adapts their personal theta with item parameters fixed.",
+            "test_student_policy": "Test students are passed through the frozen EKTM model; Q-MIRT only adapts their personal theta with item parameters fixed.",
             "evaluation_label_policy": "evaluation_uid_kc_response.txt is not read by protocol or feature generation stages.",
             "counts": {
                 "students": raw.student_count,

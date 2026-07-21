@@ -32,14 +32,13 @@ MODEL_COLORS = {
     "feature_only_exercise_id": "#0891B2",
     "feature_only_no_mastery": "#CA8A04",
     "feature_only_no_forgetting": "#9333EA",
-    "feature_only_no_seq": "#DB2777",
 }
 MODEL_MARKERS = {
     "TransE": "o", "TransE-adv": "s", "RotatE": "^", "DistMult": "D", "ComplEx": "P",
     "CBF": "X", "SB-CF": "v", "EB-CF": "<",
     "id_only": "s", "feature_only": "^", "feature_only_relation_id": "D",
     "feature_only_learner_id": "P", "feature_only_exercise_id": "X",
-    "feature_only_no_mastery": "v", "feature_only_no_forgetting": "<", "feature_only_no_seq": ">",
+    "feature_only_no_mastery": "v", "feature_only_no_forgetting": "<",
 }
 REPRESENTATION_MODELS = (
     "feature_only", "id_only", "feature_only_relation_id",
@@ -49,7 +48,6 @@ COGNITIVE_MODELS = (
     "feature_only",
     "feature_only_no_mastery",
     "feature_only_no_forgetting",
-    "feature_only_no_seq",
 )
 COMPARISON_MODELS = ("feature_only", "TransE", "TransE-adv", "RotatE", "DistMult", "ComplEx", "CBF", "SB-CF", "EB-CF")
 

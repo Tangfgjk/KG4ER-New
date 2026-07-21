@@ -11,7 +11,6 @@ from common import DEFAULT_DATASETS, data_fin_root
 STAGES = [
     "prepare",
     "mirt",
-    "sequence",
     "ektm",
     "forgetting",
     "semantic",
@@ -29,14 +28,11 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--stages", default="all", help="Comma-separated stages or all")
     parser.add_argument("--mirt-epochs", type=int, default=70)
     parser.add_argument("--mirt-batch-size", type=int, default=1024)
-    parser.add_argument("--sequence-epochs", type=int, default=30)
-    parser.add_argument("--sequence-batch-size", type=int, default=32)
     parser.add_argument("--ektm-epochs", type=int, default=30)
     parser.add_argument("--ektm-batch-size", type=int, default=16)
     parser.add_argument("--device", default="cuda")
     parser.add_argument("--theta", default="auto", help="Positive decay denominator or 'auto' for per-dataset calibration.")
     parser.add_argument("--timestamp-unit", default="auto", choices=["auto", "seconds", "milliseconds", "minutes", "days"])
-    parser.add_argument("--sequence-term", default="one_minus_cos_sq", choices=["one_minus_cos_sq", "legacy_cos_sq"])
     parser.add_argument("--force", action="store_true")
     return parser.parse_args()
 
@@ -68,13 +64,6 @@ def commands_for_dataset(args: argparse.Namespace, dataset: str, root: Path, sta
             ["--epoch", str(args.mirt_epochs), "--batch-size", str(args.mirt_batch_size), "--lr", "0.001", "--device", args.device],
             args.force,
         ),
-        "sequence": script_command(
-            "train_multilabel_seq.py",
-            dataset,
-            root,
-            ["--epochs", str(args.sequence_epochs), "--batch-size", str(args.sequence_batch_size), "--learning-rate", "0.001", "--device", args.device],
-            args.force,
-        ),
         "ektm": script_command(
             "train_ektm_mirt.py",
             dataset,
@@ -90,13 +79,7 @@ def commands_for_dataset(args: argparse.Namespace, dataset: str, root: Path, sta
             args.force,
         ),
         "semantic": script_command("build_semantic_features.py", dataset, root, [], args.force),
-        "graph": script_command(
-            "build_er_graph.py",
-            dataset,
-            root,
-            ["--sequence-term", args.sequence_term],
-            args.force,
-        ),
+        "graph": script_command("build_er_graph.py", dataset, root, [], args.force),
         "validate": [
             sys.executable,
             str(Path(__file__).resolve().parent / "validate_front_pipeline.py"),

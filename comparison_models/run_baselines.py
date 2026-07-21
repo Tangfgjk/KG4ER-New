@@ -46,11 +46,9 @@ def parse_args():
 def _load_required_inputs(data_dir):
     q_matrix = load_q_matrix(data_dir / "Q.txt")
     mastery = load_json_matrix(data_dir / "stu2know_mastery.json")
-    sequence_path = data_dir / "stu2know_seq.json"
     forgetting_path = data_dir / "stu2ex_forget.json"
-    sequence = load_json_matrix(sequence_path) if sequence_path.exists() else None
     forgetting = load_json_matrix(forgetting_path) if forgetting_path.exists() else None
-    return q_matrix, mastery, sequence, forgetting
+    return q_matrix, mastery, None, forgetting
 
 
 def main():

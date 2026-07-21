@@ -4,8 +4,8 @@ This branch contains the current end-to-end experiment workflow for
 SemanticConvE exercise recommendation:
 
 1. Canonical raw datasets in `Data_Fin/<dataset>/raw/`.
-2. Front-feature generation: Q-constrained MIRT, multi-label sequence model,
-   EKTM-MIRT, forgetting features, semantic features, and ER-graph building.
+2. Front-feature generation: Q-constrained MIRT, EKTM-MIRT, forgetting
+   features, semantic features, and ER-graph building.
 3. SemanticConvE full and ablation experiments.
 4. ID-only KGE and traditional recommendation baselines.
 

@@ -29,7 +29,7 @@ def validate_one(dataset: str, root: Path, require_graph: bool) -> dict:
         payload = read_json(protocol)
         if sorted(payload.get("outer_train_uids", []) + payload.get("outer_test_uids", [])) != list(range(raw.student_count)):
             errors.append("protocol outer cohort does not exactly cover raw students")
-    state_paths = [front / "stu2know_mastery.json", front / "stu2know_seq.json", front / "stu2know_forget.json", front / "stu2ex_forget.json"]
+    state_paths = [front / "stu2know_mastery.json", front / "stu2know_forget.json", front / "stu2ex_forget.json"]
     states: dict[str, np.ndarray] = {}
     for path in state_paths:
         if not path.exists():
@@ -39,7 +39,7 @@ def validate_one(dataset: str, root: Path, require_graph: bool) -> dict:
             states[path.stem] = read_matrix_json(path)
         except Exception as exc:
             errors.append(f"cannot read {path.name}: {exc}")
-    for name in ["stu2know_mastery", "stu2know_seq", "stu2know_forget"]:
+    for name in ["stu2know_mastery", "stu2know_forget"]:
         if name in states and states[name].shape != (raw.student_count, raw.concept_count):
             errors.append(f"{name} shape={states[name].shape}, expected={(raw.student_count, raw.concept_count)}")
     if "stu2ex_forget" in states and states["stu2ex_forget"].shape != (raw.student_count, raw.exercise_count):

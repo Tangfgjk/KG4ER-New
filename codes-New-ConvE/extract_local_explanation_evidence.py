@@ -137,7 +137,6 @@ def main() -> None:
 
     q_matrix = load_q_matrix(args.data_dir / "Q.txt")
     mastery = read_json(args.data_dir / "stu2know_mastery.json")
-    seq = read_json(args.data_dir / "stu2know_seq.json")
     forgetting = read_json(args.data_dir / "stu2ex_forget.json")
     concept_semantics = read_json(entity_feature_dir / "concept_semantics.json").get("concepts", {})
     exercise_semantics = read_json(entity_feature_dir / "exercise_semantics.json").get("exercises", {})
@@ -166,7 +165,6 @@ def main() -> None:
             exercise = exercise_irt.get(exercise_id, {})
             ex_sem = exercise_semantics.get(exercise_id, {})
             mastery_value = mean_existing(matrix_value(mastery, uid_idx, kc_idx) for kc_idx in kc_indices)
-            seq_value = mean_existing(matrix_value(seq, uid_idx, kc_idx) for kc_idx in kc_indices)
             forgetting_value = matrix_value(forgetting, uid_idx, ex_idx)
             rows.append(
                 {
@@ -182,7 +180,6 @@ def main() -> None:
                     "KC": ";".join(kc_ids),
                     "Concept Name": ";".join(concept_names),
                     "Mastery": mastery_value,
-                    "Seq": seq_value,
                     "Forgetting": forgetting_value,
                     "Theta": learner.get("theta_norm", learner.get("theta_mirt_mean")),
                     "Difficulty": exercise.get(
@@ -208,7 +205,6 @@ def main() -> None:
         "KC",
         "Concept Name",
         "Mastery",
-        "Seq",
         "Forgetting",
         "Theta",
         "Difficulty",

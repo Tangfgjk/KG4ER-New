@@ -37,7 +37,7 @@ class SemanticConvECompactConcatTest(unittest.TestCase):
             text_dim=text_dim,
             numeric_dim=numeric_dim,
             relation_type_ids=torch.tensor(
-                [RELATION_TYPE_TO_ID["mlkc"], RELATION_TYPE_TO_ID["mlkc"], RELATION_TYPE_TO_ID["pkc"]],
+                [RELATION_TYPE_TO_ID["mlkc"], RELATION_TYPE_TO_ID["mlkc"], RELATION_TYPE_TO_ID["exfr"]],
                 dtype=torch.long,
             ),
             relation_strengths=torch.tensor([[0.50], [0.80], [0.50]], dtype=torch.float32),
@@ -90,7 +90,7 @@ class SemanticConvECompactConcatTest(unittest.TestCase):
         self.assertTrue(torch.allclose(model_a.relation_embedding(relation_ids), model_b.relation_embedding(relation_ids), atol=1e-6))
 
     def test_feature_only_cognitive_graph_variants_ignore_ids(self) -> None:
-        for ablation in ("feature_only_no_mastery", "feature_only_no_forgetting", "feature_only_no_seq"):
+        for ablation in ("feature_only_no_mastery", "feature_only_no_forgetting"):
             model_a = self.build_model()
             model_b = self.build_model()
             model_a.ablation_mode = ablation
@@ -139,7 +139,7 @@ class SemanticConvECompactConcatTest(unittest.TestCase):
         model_a.eval()
         model_b.eval()
         with torch.no_grad():
-            model_b.relation_type_ids.fill_(RELATION_TYPE_TO_ID["pkc"])
+            model_b.relation_type_ids.fill_(RELATION_TYPE_TO_ID["exfr"])
             model_b.relation_strengths.fill_(0.01)
 
         relation_ids = torch.tensor([0, 1], dtype=torch.long)

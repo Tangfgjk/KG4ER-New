@@ -18,7 +18,7 @@ import torch
 
 
 ENTITY_TYPE_TO_ID = {"uid": 0, "kc": 1, "ex": 2, "other": 3}
-RELATION_TYPE_TO_ID = {"rec": 0, "mlkc": 1, "pkc": 2, "exfr": 3, "other": 4}
+RELATION_TYPE_TO_ID = {"rec": 0, "mlkc": 1, "exfr": 2, "other": 3}
 NO_CLUSTER_ID = 5
 
 
@@ -94,8 +94,6 @@ def relation_kind(relation_name: str) -> str:
         return "rec"
     if relation_name.startswith("mlkc"):
         return "mlkc"
-    if relation_name.startswith("pkc"):
-        return "pkc"
     if relation_name.startswith("exfr"):
         return "exfr"
     return "other"
@@ -393,24 +391,22 @@ def load_semantic_feature_bundle(
     }
 
     mastery_matrix = _read_state_matrix(data_path, "stu2know_mastery.json")
-    sequence_matrix = _read_state_matrix(data_path, "stu2know_seq.json")
     forget_matrix = _read_state_matrix(data_path, "stu2know_forget.json")
     knowledge_width = 0
-    for matrix in (mastery_matrix, sequence_matrix, forget_matrix):
+    for matrix in (mastery_matrix, forget_matrix):
         if matrix:
             knowledge_width = max(knowledge_width, len(matrix[0]))
     state_slices = {
         "mastery": (0, knowledge_width),
-        "sequence": (knowledge_width, knowledge_width * 2),
-        "forgetting": (knowledge_width * 2, knowledge_width * 3),
-        "learner_irt": (knowledge_width * 3, knowledge_width * 3 + learner_irt_width),
+        "forgetting": (knowledge_width, knowledge_width * 2),
+        "learner_irt": (knowledge_width * 2, knowledge_width * 2 + learner_irt_width),
         "learner_stat": (
-            knowledge_width * 3 + learner_irt_width,
-            knowledge_width * 3 + learner_irt_width + learner_stat_width,
+            knowledge_width * 2 + learner_irt_width,
+            knowledge_width * 2 + learner_irt_width + learner_stat_width,
         ),
         "cluster": (
-            knowledge_width * 3 + learner_irt_width + learner_stat_width,
-            knowledge_width * 3 + learner_irt_width + learner_stat_width + 1,
+            knowledge_width * 2 + learner_irt_width + learner_stat_width,
+            knowledge_width * 2 + learner_irt_width + learner_stat_width + 1,
         ),
     }
     state_width = state_slices["cluster"][1]
@@ -449,10 +445,6 @@ def load_semantic_feature_bundle(
             if uid_idx is not None:
                 state_array[entity_id, state_slices["mastery"][0] : state_slices["mastery"][1]] = np.asarray(
                     _safe_state_row(mastery_matrix, uid_idx, knowledge_width),
-                    dtype=np.float32,
-                )
-                state_array[entity_id, state_slices["sequence"][0] : state_slices["sequence"][1]] = np.asarray(
-                    _safe_state_row(sequence_matrix, uid_idx, knowledge_width),
                     dtype=np.float32,
                 )
                 state_array[entity_id, state_slices["forgetting"][0] : state_slices["forgetting"][1]] = np.asarray(

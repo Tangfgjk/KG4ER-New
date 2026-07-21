@@ -13,16 +13,11 @@ from torch.utils.data import DataLoader, Subset
 from common import data_fin_root, exercise_texts, front_dir, load_raw_dataset, read_json, write_json, write_matrix_json
 
 
-RELATION_TEXT_TYPES = ("rec", "mlkc", "pkc", "exfr", "other")
+RELATION_TEXT_TYPES = ("rec", "mlkc", "exfr", "other")
 RELATION_TEXT_TEMPLATES = {
     "mlkc": (
         "A cognitive mastery relation from a knowledge concept to a learner, "
         "where the relation strength denotes the learner's mastery level of the concept."
-    ),
-    "pkc": (
-        "A cognitive demanding relation from a knowledge concept to a learner, "
-        "where the relation strength denotes the probability that the concept will be "
-        "encountered by the learner in the next interaction."
     ),
     "exfr": (
         "A cognitive forgetting relation from an exercise to a learner, "
@@ -30,8 +25,8 @@ RELATION_TEXT_TEMPLATES = {
     ),
     "rec": (
         "A recommendation relation from a learner to an exercise, "
-        "where the exercise is recommended according to the learner's cognitive mastery, "
-        "sequence, and forgetting states."
+        "where the exercise is recommended according to the learner's cognitive mastery "
+        "and forgetting states."
     ),
     "other": "An unspecified educational relation between two graph entities.",
 }
