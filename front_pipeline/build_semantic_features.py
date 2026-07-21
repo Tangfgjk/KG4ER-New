@@ -20,6 +20,7 @@ def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Build SemanticConvE-compatible metadata from raw-front model outputs.")
     parser.add_argument("--dataset", required=True)
     parser.add_argument("--data-fin-root", type=Path, default=None)
+    parser.add_argument("--raw-name", default="raw")
     parser.add_argument("--cluster-count", type=int, default=5)
     parser.add_argument("--seed", type=int, default=2024)
     parser.add_argument("--force", action="store_true")
@@ -37,7 +38,7 @@ def index_entries(payload: dict, key: str, index_name: str) -> dict[int, dict]:
 def main() -> None:
     args = parse_args()
     root = data_fin_root(args.data_fin_root)
-    raw = load_raw_dataset(args.dataset, root)
+    raw = load_raw_dataset(args.dataset, root, args.raw_name)
     front = front_dir(args.dataset, root)
     feature_dir = front / "semantic_kg_features"
     entity_dir = feature_dir / "entity_features"

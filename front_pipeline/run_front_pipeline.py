@@ -25,6 +25,11 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument("--datasets", default=",".join(DEFAULT_DATASETS))
     parser.add_argument("--data-fin-root", type=Path, default=None)
+    parser.add_argument(
+        "--compact-datasets",
+        default="assist2009-sub,XES3G5M-sub-small",
+        help="Datasets that read the sibling raw_compact cohort; pass an empty string to use raw for all datasets.",
+    )
     parser.add_argument("--stages", default="all", help="Comma-separated stages or all")
     parser.add_argument("--mirt-epochs", type=int, default=70)
     parser.add_argument("--mirt-batch-size", type=int, default=1024)
@@ -47,39 +52,49 @@ def selected_stages(value: str) -> list[str]:
     return selected
 
 
-def script_command(script: str, dataset: str, root: Path, extra: list[str], force: bool) -> list[str]:
-    command = [sys.executable, str(Path(__file__).resolve().parent / script), "--dataset", dataset, "--data-fin-root", str(root), *extra]
+def script_command(script: str, dataset: str, root: Path, raw_name: str, extra: list[str], force: bool) -> list[str]:
+    command = [
+        sys.executable,
+        str(Path(__file__).resolve().parent / script),
+        "--dataset",
+        dataset,
+        "--data-fin-root",
+        str(root),
+        "--raw-name",
+        raw_name,
+        *extra,
+    ]
     if force:
         command.append("--force")
     return command
 
 
-def commands_for_dataset(args: argparse.Namespace, dataset: str, root: Path, stages: list[str]) -> list[list[str]]:
+def commands_for_dataset(args: argparse.Namespace, dataset: str, root: Path, stages: list[str], raw_name: str) -> list[list[str]]:
     by_stage = {
-        "prepare": script_command("prepare_front_protocol.py", dataset, root, [], args.force),
+        "prepare": script_command("prepare_front_protocol.py", dataset, root, raw_name, [], args.force),
         "mirt": script_command(
             "train_q_mirt.py",
             dataset,
-            root,
+            root, raw_name,
             ["--epoch", str(args.mirt_epochs), "--batch-size", str(args.mirt_batch_size), "--lr", "0.001", "--device", args.device],
             args.force,
         ),
         "ektm": script_command(
             "train_ektm_mirt.py",
             dataset,
-            root,
+            root, raw_name,
             ["--epochs", str(args.ektm_epochs), "--batch-size", str(args.ektm_batch_size), "--learning-rate", "0.001", "--device", args.device],
             args.force,
         ),
         "forgetting": script_command(
             "generate_forgetting.py",
             dataset,
-            root,
+            root, raw_name,
             ["--theta", str(args.theta), "--timestamp-unit", args.timestamp_unit],
             args.force,
         ),
-        "semantic": script_command("build_semantic_features.py", dataset, root, [], args.force),
-        "graph": script_command("build_er_graph.py", dataset, root, [], args.force),
+        "semantic": script_command("build_semantic_features.py", dataset, root, raw_name, [], args.force),
+        "graph": script_command("build_er_graph.py", dataset, root, raw_name, [], args.force),
         "validate": [
             sys.executable,
             str(Path(__file__).resolve().parent / "validate_front_pipeline.py"),
@@ -87,6 +102,8 @@ def commands_for_dataset(args: argparse.Namespace, dataset: str, root: Path, sta
             dataset,
             "--data-fin-root",
             str(root),
+            "--raw-name",
+            raw_name,
             "--require-graph",
             "--output-file",
             str(root / dataset / "front_features" / "front_validation_report.json"),
@@ -99,10 +116,15 @@ def main() -> None:
     args = parse_args()
     root = data_fin_root(args.data_fin_root)
     datasets = [item.strip() for item in args.datasets.split(",") if item.strip()]
+    compact_datasets = {item.strip() for item in args.compact_datasets.split(",") if item.strip()}
+    unknown_compact = compact_datasets - set(DEFAULT_DATASETS)
+    if unknown_compact:
+        raise ValueError(f"Unknown compact datasets: {sorted(unknown_compact)}")
     stages = selected_stages(args.stages)
     for dataset in datasets:
-        print(f"\n===== [{dataset}] Data_Fin front pipeline =====")
-        for command in commands_for_dataset(args, dataset, root, stages):
+        raw_name = "raw_compact" if dataset in compact_datasets else "raw"
+        print(f"\n===== [{dataset}] Data_Fin front pipeline ({raw_name}) =====")
+        for command in commands_for_dataset(args, dataset, root, stages, raw_name):
             print(" ".join(command))
             completed = subprocess.run(command, cwd=Path(__file__).resolve().parents[1])
             if completed.returncode != 0:

@@ -17,6 +17,7 @@ def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Train Q-constrained MIRT from Data_Fin/raw and adapt only test-student theta.")
     parser.add_argument("--dataset", required=True)
     parser.add_argument("--data-fin-root", type=Path, default=None)
+    parser.add_argument("--raw-name", default="raw")
     parser.add_argument("--epoch", type=int, default=70)
     parser.add_argument("--batch-size", type=int, default=1024)
     parser.add_argument("--lr", type=float, default=0.001)
@@ -98,7 +99,7 @@ def adapt_theta(
 def main() -> None:
     args = parse_args()
     root = data_fin_root(args.data_fin_root)
-    raw = load_raw_dataset(args.dataset, root)
+    raw = load_raw_dataset(args.dataset, root, args.raw_name)
     output = front_dir(args.dataset, root) / "mirt"
     protocol = read_json(front_dir(args.dataset, root) / "protocol.json")
     output.mkdir(parents=True, exist_ok=True)

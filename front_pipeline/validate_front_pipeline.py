@@ -12,13 +12,14 @@ def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Validate raw-front features and final ER graph coverage.")
     parser.add_argument("--datasets", default=",".join(DEFAULT_DATASETS))
     parser.add_argument("--data-fin-root", type=Path, default=None)
+    parser.add_argument("--raw-name", default="raw")
     parser.add_argument("--require-graph", action="store_true")
     parser.add_argument("--output-file", type=Path, default=None)
     return parser.parse_args()
 
 
-def validate_one(dataset: str, root: Path, require_graph: bool) -> dict:
-    raw = load_raw_dataset(dataset, root)
+def validate_one(dataset: str, root: Path, require_graph: bool, raw_name: str = "raw") -> dict:
+    raw = load_raw_dataset(dataset, root, raw_name)
     front = front_dir(dataset, root)
     errors: list[str] = []
     warnings: list[str] = []
@@ -89,7 +90,7 @@ def main() -> None:
     args = parse_args()
     root = data_fin_root(args.data_fin_root)
     datasets = [item.strip() for item in args.datasets.split(",") if item.strip()]
-    reports = [validate_one(dataset, root, args.require_graph) for dataset in datasets]
+    reports = [validate_one(dataset, root, args.require_graph, args.raw_name) for dataset in datasets]
     payload = {"data_fin_root": root, "reports": reports, "status": "passed" if all(report["status"] == "passed" for report in reports) else "failed"}
     if args.output_file:
         write_json(args.output_file, payload)

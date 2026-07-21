@@ -45,8 +45,8 @@ def dataset_root(dataset: str, explicit_root: Path | None = None) -> Path:
     return path
 
 
-def raw_dir(dataset: str, explicit_root: Path | None = None) -> Path:
-    path = dataset_root(dataset, explicit_root) / "raw"
+def raw_dir(dataset: str, explicit_root: Path | None = None, raw_name: str = "raw") -> Path:
+    path = dataset_root(dataset, explicit_root) / raw_name
     if not path.exists():
         raise FileNotFoundError(f"raw dataset directory does not exist: {path}")
     return path
@@ -147,8 +147,8 @@ class RawDataset:
         return self.student_split.loc[self.student_split["split"] == "test", "uid"].astype(int).tolist()
 
 
-def load_raw_dataset(dataset: str, explicit_root: Path | None = None) -> RawDataset:
-    root = raw_dir(dataset, explicit_root)
+def load_raw_dataset(dataset: str, explicit_root: Path | None = None, raw_name: str = "raw") -> RawDataset:
+    root = raw_dir(dataset, explicit_root, raw_name)
     required = [
         "interactions_all.csv",
         "student_split.csv",

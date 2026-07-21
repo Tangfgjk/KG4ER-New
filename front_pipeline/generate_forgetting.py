@@ -15,6 +15,7 @@ def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Generate raw-data knowledge and exercise forgetting features.")
     parser.add_argument("--dataset", required=True)
     parser.add_argument("--data-fin-root", type=Path, default=None)
+    parser.add_argument("--raw-name", default="raw")
     parser.add_argument(
         "--theta",
         default="auto",
@@ -96,7 +97,7 @@ def parse_theta(value: str, deltas: np.ndarray, quantile: float, target: float) 
 def main() -> None:
     args = parse_args()
     root = data_fin_root(args.data_fin_root)
-    raw = load_raw_dataset(args.dataset, root)
+    raw = load_raw_dataset(args.dataset, root, args.raw_name)
     output = front_dir(args.dataset, root) / "forgetting"
     output.mkdir(parents=True, exist_ok=True)
     target = output / "stu2know_forget.json"

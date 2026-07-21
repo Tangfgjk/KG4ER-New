@@ -73,6 +73,7 @@ def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Train EKTM_mirt-style front model from raw cohorts and export mastery/text embeddings.")
     parser.add_argument("--dataset", required=True)
     parser.add_argument("--data-fin-root", type=Path, default=None)
+    parser.add_argument("--raw-name", default="raw")
     parser.add_argument("--epochs", type=int, default=30)
     parser.add_argument("--batch-size", type=int, default=16)
     parser.add_argument("--text-emb-size", type=int, default=128)
@@ -135,7 +136,7 @@ def main() -> None:
     if args.text_hidden_size % 2 != 0:
         raise ValueError("--text-hidden-size must be even for the bidirectional GRU text encoder")
     root = data_fin_root(args.data_fin_root)
-    raw = load_raw_dataset(args.dataset, root)
+    raw = load_raw_dataset(args.dataset, root, args.raw_name)
     front = front_dir(args.dataset, root)
     protocol = read_json(front / "protocol.json")
     mirt_dir = front / "mirt"

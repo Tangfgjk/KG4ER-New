@@ -29,6 +29,7 @@ REQUIRED = {
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--output-root", type=Path, required=True)
+    parser.add_argument("--raw-name", default="raw", help="Raw directory name under each dataset, e.g. raw_compact.")
     parser.add_argument("--datasets", default="all")
     parser.add_argument("--report", type=Path, default=None)
     return parser.parse_args()
@@ -73,8 +74,8 @@ def parse_interaction_concepts(value: str) -> set[int]:
     return {int(token) for token in re.split(r"[_;,\s]+", value.strip()) if token}
 
 
-def validate_dataset(output_root: Path, dataset: str) -> dict:
-    raw_dir = output_root / dataset / "raw"
+def validate_dataset(output_root: Path, dataset: str, raw_name: str = "raw") -> dict:
+    raw_dir = output_root / dataset / raw_name
     errors: list[str] = []
     warnings: list[str] = []
     missing = sorted(name for name in REQUIRED if not (raw_dir / name).exists())
@@ -185,7 +186,7 @@ def validate_dataset(output_root: Path, dataset: str) -> dict:
 
 def main() -> None:
     args = parse_args()
-    reports = [validate_dataset(args.output_root, dataset) for dataset in selected(args.datasets)]
+    reports = [validate_dataset(args.output_root, dataset, args.raw_name) for dataset in selected(args.datasets)]
     payload = {"output_root": str(args.output_root), "reports": reports, "status": "passed" if all(item["status"] == "passed" for item in reports) else "failed"}
     report_path = args.report or args.output_root / "raw_validation_report.json"
     report_path.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")

@@ -12,6 +12,7 @@ def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Prepare a leakage-auditable front-feature protocol from Data_Fin/raw.")
     parser.add_argument("--dataset", required=True)
     parser.add_argument("--data-fin-root", type=Path, default=None)
+    parser.add_argument("--raw-name", default="raw")
     parser.add_argument("--valid-ratio", type=float, default=0.1)
     parser.add_argument("--seed", type=int, default=2024)
     parser.add_argument(
@@ -32,7 +33,7 @@ def write_interactions(frame: pd.DataFrame, path: Path) -> None:
 def main() -> None:
     args = parse_args()
     root = data_fin_root(args.data_fin_root)
-    raw = load_raw_dataset(args.dataset, root)
+    raw = load_raw_dataset(args.dataset, root, args.raw_name)
     output = front_dir(args.dataset, root)
     protocol_path = output / "protocol.json"
     if protocol_path.exists() and not args.force:

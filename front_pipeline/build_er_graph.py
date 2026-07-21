@@ -25,6 +25,7 @@ def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Build KG4ER graph files from Data_Fin/raw and regenerated front features.")
     parser.add_argument("--dataset", required=True)
     parser.add_argument("--data-fin-root", type=Path, default=None)
+    parser.add_argument("--raw-name", default="raw")
     parser.add_argument("--delta-1", type=float, default=0.8)
     parser.add_argument("--delta-2", type=float, default=0.8)
     parser.add_argument("--top-k-rec", type=int, default=10)
@@ -76,7 +77,7 @@ def write_triples(path: Path, users: list[int], mastery: np.ndarray, ex_forget: 
 def main() -> None:
     args = parse_args()
     root = data_fin_root(args.data_fin_root)
-    raw = load_raw_dataset(args.dataset, root)
+    raw = load_raw_dataset(args.dataset, root, args.raw_name)
     front = front_dir(args.dataset, root)
     output = graph_dir(args.dataset, root)
     if output.exists() and any(output.iterdir()):
