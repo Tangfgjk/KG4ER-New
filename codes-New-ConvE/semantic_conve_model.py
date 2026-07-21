@@ -24,7 +24,7 @@ the original ConvE scoring module.
 
 from __future__ import annotations
 
-from typing import Optional
+from typing import Any, Optional
 
 import torch
 import torch.nn as nn
@@ -89,7 +89,9 @@ class RawConcatFusion(nn.Module):
     def __init__(self, input_dim: int, embedding_dim: int, dropout: float = 0.1) -> None:
         super().__init__()
         self.input_dim = int(input_dim)
-        self.input_norm = nn.LayerNorm(self.input_dim)
+        # Inputs already have feature-specific scales. In particular,
+        # LayerNorm(1) would erase the learner theta scalar completely.
+        self.input_norm = nn.Identity()
         hidden_dim = embedding_dim * 2
         self.output = nn.Sequential(
             nn.Linear(self.input_dim, hidden_dim),
@@ -105,6 +107,29 @@ class RawConcatFusion(nn.Module):
         if features.shape[1] != self.input_dim:
             raise ValueError(f"expected feature_dim={self.input_dim}, got {features.shape[1]}")
         return self.output_norm(self.output(self.input_norm(features)))
+
+
+class SharedTextBiGRU(nn.Module):
+    """The EKTM_mirt text encoder reused by exercises and relation templates."""
+
+    def __init__(self, vocab_size: int, text_emb_size: int, text_hidden_size: int, padding_idx: int = 0) -> None:
+        super().__init__()
+        if text_hidden_size % 2 != 0:
+            raise ValueError("shared text_hidden_size must be even for Bi-GRU encoding")
+        self.word_embedding = nn.Embedding(vocab_size, text_emb_size, padding_idx=padding_idx)
+        self.text_encoder = nn.GRU(
+            text_emb_size,
+            text_hidden_size // 2,
+            batch_first=True,
+            bidirectional=True,
+        )
+
+    def forward(self, token_ids: torch.Tensor) -> torch.Tensor:
+        if token_ids.dim() != 2:
+            raise ValueError("shared text token_ids must be shaped [batch, sequence_length]")
+        embedded = self.word_embedding(token_ids)
+        _outputs, hidden = self.text_encoder(embedded)
+        return torch.cat([hidden[-2], hidden[-1]], dim=1)
 
 
 class SemanticConvE(nn.Module):
@@ -124,6 +149,11 @@ class SemanticConvE(nn.Module):
         numeric_features: torch.Tensor,
         semantic_quality: torch.Tensor,
         state_features: Optional[torch.Tensor] = None,
+        exercise_text_token_ids: Optional[torch.Tensor] = None,
+        exercise_entity_to_text_index: Optional[torch.Tensor] = None,
+        relation_text_token_ids: Optional[torch.Tensor] = None,
+        shared_text_encoder_state: Optional[dict[str, Any]] = None,
+        shared_text_encoder_config: Optional[dict[str, Any]] = None,
         embedding_dim: int = 200,
         embedding_shape1: int = 20,
         hidden_size: int = 9728,
@@ -176,8 +206,13 @@ class SemanticConvE(nn.Module):
             embedding_dim,
         )
         self.kc_fusion = RawConcatFusion(embedding_dim, embedding_dim)
-        self.relation_fusion = RawConcatFusion(embedding_dim + self.relation_type_dim + 1, embedding_dim)
-        self.relation_feature_only_fusion = RawConcatFusion(self.relation_type_dim + 1, embedding_dim)
+        self.strength_projector = nn.Sequential(nn.Linear(1, 16), nn.ReLU(), nn.Linear(16, 16))
+        self.relation_text_dim = self.text_dim
+        self.relation_fusion = RawConcatFusion(embedding_dim + self.relation_text_dim + 16, embedding_dim)
+        self.relation_feature_only_fusion = RawConcatFusion(self.relation_text_dim + 16, embedding_dim)
+        # Compatibility path for legacy feature bundles and focused unit tests.
+        self.legacy_relation_fusion = RawConcatFusion(embedding_dim + self.relation_type_dim + 1, embedding_dim)
+        self.legacy_relation_feature_only_fusion = RawConcatFusion(self.relation_type_dim + 1, embedding_dim)
         self.entity_norm = nn.LayerNorm(embedding_dim)
         self.relation_norm = nn.LayerNorm(embedding_dim)
 
@@ -201,6 +236,30 @@ class SemanticConvE(nn.Module):
         self.register_buffer("semantic_quality", semantic_quality.detach().clone())
         self.register_buffer("relation_type_ids", relation_type_ids.detach().clone())
         self.register_buffer("relation_strengths", relation_strengths.detach().clone())
+        self.register_buffer(
+            "exercise_text_token_ids",
+            (exercise_text_token_ids.detach().clone() if exercise_text_token_ids is not None else torch.zeros((0, 1), dtype=torch.long)),
+        )
+        self.register_buffer(
+            "exercise_entity_to_text_index",
+            (exercise_entity_to_text_index.detach().clone() if exercise_entity_to_text_index is not None else torch.full((nentity,), -1, dtype=torch.long)),
+        )
+        self.register_buffer(
+            "relation_text_token_ids",
+            (relation_text_token_ids.detach().clone() if relation_text_token_ids is not None else torch.zeros((0, 1), dtype=torch.long)),
+        )
+        self.shared_text_encoder: Optional[SharedTextBiGRU] = None
+        if shared_text_encoder_config and shared_text_encoder_state is not None:
+            self.shared_text_encoder = SharedTextBiGRU(
+                vocab_size=int(shared_text_encoder_config["vocab_size"]),
+                text_emb_size=int(shared_text_encoder_config["text_emb_size"]),
+                text_hidden_size=int(shared_text_encoder_config["text_hidden_size"]),
+                padding_idx=int(shared_text_encoder_config.get("padding_idx", 0)),
+            )
+            self.shared_text_encoder.word_embedding.load_state_dict(shared_text_encoder_state["word_embedding"])
+            self.shared_text_encoder.text_encoder.load_state_dict(shared_text_encoder_state["text_encoder"])
+            if int(shared_text_encoder_config["text_hidden_size"]) != self.text_dim:
+                raise ValueError("shared text encoder output dimension must match text_dim")
         self.init()
 
     @classmethod
@@ -218,6 +277,11 @@ class SemanticConvE(nn.Module):
             numeric_features=bundle.numeric_features,
             state_features=bundle.state_features,
             semantic_quality=bundle.semantic_quality,
+            exercise_text_token_ids=bundle.exercise_text_token_ids,
+            exercise_entity_to_text_index=bundle.exercise_entity_to_text_index,
+            relation_text_token_ids=bundle.relation_text_token_ids,
+            shared_text_encoder_state=bundle.shared_text_encoder_state,
+            shared_text_encoder_config=bundle.shared_text_encoder_config,
             numeric_feature_slices=bundle.numeric_feature_slices,
             state_feature_slices=bundle.state_feature_slices,
             **kwargs,
@@ -239,6 +303,13 @@ class SemanticConvE(nn.Module):
         return self.numeric_features[entity_ids, start:end]
 
     def _entity_text(self, entity_ids: torch.Tensor) -> torch.Tensor:
+        if self.shared_text_encoder is not None:
+            text_indices = self.exercise_entity_to_text_index[entity_ids]
+            valid = text_indices >= 0
+            output = torch.zeros((entity_ids.numel(), self.text_dim), dtype=self.emb_e.weight.dtype, device=entity_ids.device)
+            if valid.any():
+                output[valid] = self.shared_text_encoder(self.exercise_text_token_ids[text_indices[valid]])
+            return output
         text_features = self.text_features[entity_ids]
         if self.freeze_text_features:
             text_features = text_features.detach()
@@ -402,16 +473,16 @@ class SemanticConvE(nn.Module):
         exercise_features = (
             ["entity_id_200"]
             if self._uses_exercise_id_only()
-            else ["topic_v/text_100", "difficulty_mirt_norm_1", "discrimination_mirt_norm_1"]
+            else ["shared_topic_text_100", "difficulty_mirt_norm_1", "discrimination_mirt_norm_1"]
             if self._removes_exercise_id()
-            else ["entity_id_200", "topic_v/text_100", "difficulty_mirt_norm_1", "discrimination_mirt_norm_1"]
+            else ["entity_id_200", "shared_topic_text_100", "difficulty_mirt_norm_1", "discrimination_mirt_norm_1"]
         )
         relation_features = (
             ["relation_id_200"]
             if self._uses_relation_id_only()
-            else ["relation_type_16", "relation_strength_1"]
+            else ["relation_text_100", "strength_embedding_16"]
             if self._removes_relation_id()
-            else ["relation_id_200", "relation_type_16", "relation_strength_1"]
+            else ["relation_id_200", "relation_text_100", "strength_embedding_16"]
         )
         return {
             "fusion": "type-specific raw feature concatenation + MLP compression",
@@ -428,15 +499,23 @@ class SemanticConvE(nn.Module):
         id_emb = self.relation_id_emb(relation_ids)
         if self._uses_relation_id_only() or not self._uses_relation_features():
             return self.relation_norm(id_emb)
-
-        type_emb = self.relation_type_emb(self.relation_type_ids[relation_ids])
         strength = self.relation_strengths[relation_ids]
         if self.ablation_mode == "no_relation_strength":
             strength = torch.zeros_like(strength)
+        if self.shared_text_encoder is None or self.relation_text_token_ids.numel() == 0:
+            type_emb = self.relation_type_emb(self.relation_type_ids[relation_ids])
+            if self._removes_relation_id():
+                relation_emb = self.legacy_relation_feature_only_fusion(torch.cat([type_emb, strength], dim=1))
+            else:
+                relation_emb = self.legacy_relation_fusion(torch.cat([id_emb, type_emb, strength], dim=1))
+            return self.relation_norm(relation_emb)
+        relation_type_ids = self.relation_type_ids[relation_ids].clamp(max=self.relation_text_token_ids.shape[0] - 1)
+        relation_text = self.shared_text_encoder(self.relation_text_token_ids[relation_type_ids])
+        strength_emb = self.strength_projector(strength)
         if self._removes_relation_id():
-            relation_emb = self.relation_feature_only_fusion(torch.cat([type_emb, strength], dim=1))
+            relation_emb = self.relation_feature_only_fusion(torch.cat([relation_text, strength_emb], dim=1))
         else:
-            relation_emb = self.relation_fusion(torch.cat([id_emb, type_emb, strength], dim=1))
+            relation_emb = self.relation_fusion(torch.cat([id_emb, relation_text, strength_emb], dim=1))
         return self.relation_norm(relation_emb)
 
     def conve_transform(self, h_emb: torch.Tensor, r_emb: torch.Tensor) -> torch.Tensor:

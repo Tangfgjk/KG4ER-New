@@ -7,7 +7,6 @@ import numpy as np
 from sklearn.cluster import KMeans
 
 from common import (
-    concept_texts,
     data_fin_root,
     exercise_texts,
     front_dir,
@@ -75,7 +74,6 @@ def main() -> None:
     exercise_entries = index_entries(raw.exercise_metadata, "exercises", "exercise_index")
     concept_entries = index_entries(raw.concept_metadata, "concepts", "concept_index")
     exercise_text_list = exercise_texts(raw)
-    concept_text_list = concept_texts(raw)
     learner_entries: dict[str, dict] = {}
     for uid in range(raw.student_count):
         personal = raw.interactions[raw.interactions["uid"] == uid]
@@ -134,7 +132,6 @@ def main() -> None:
             "name": name,
             "definition": definition,
             "definition_source": str(item.get("definition_source", "raw_metadata")),
-            "text_for_embedding": concept_text_list[kc],
             "semantic_quality": 0.8 if definition else 0.5,
         }
 

@@ -34,8 +34,13 @@ REQUIRED_FEATURE_FILES = [
     "entity_features/exercise_semantics.json",
     "entity_features/learner_pedagogy.json",
     "irt_features/exercise_irt_features.json",
-    "text_embeddings/concept_text_embeddings.npy",
     "text_embeddings/exercise_text_embeddings.npy",
+    "text_embeddings/exercise_text_tokens.npy",
+    "text_embeddings/relation_text_tokens.npy",
+    "text_embeddings/relation_text_embeddings.npy",
+    "text_embeddings/shared_text_encoder.pt",
+    "text_embeddings/shared_text_encoder_config.json",
+    "text_embeddings/relation_semantics.json",
     "text_embeddings/text_embedding_manifest.json",
 ]
 
@@ -114,12 +119,7 @@ def validate_dataset(dataset: str, data_root: Path, allow_template: bool = False
         if "ektm" not in model_name and "topic" not in model_name:
             errors.append("text embedding manifest must identify EKTM_mirt TopicRNNModel topic_v source")
     if (feature_dir / "text_embeddings" / "concept_text_embeddings.npy").exists():
-        concept_embeddings = np.load(feature_dir / "text_embeddings" / "concept_text_embeddings.npy", mmap_mode="r")
-        concept_embedding_shape = list(concept_embeddings.shape)
-        if concept_embeddings.ndim != 2 or (manifest_dim and concept_embeddings.shape[1] != manifest_dim):
-            errors.append(f"bad concept embedding shape: {concept_embedding_shape}")
-        if concept_count and concept_embeddings.shape[0] != concept_count:
-            errors.append(f"concept embedding rows {concept_embeddings.shape[0]} != concept count {concept_count}")
+        warnings.append("concept_text_embeddings.npy is legacy-only; V-Fin7 knowledge concepts use ID embeddings")
     if (feature_dir / "text_embeddings" / "exercise_text_embeddings.npy").exists():
         exercise_embeddings = np.load(feature_dir / "text_embeddings" / "exercise_text_embeddings.npy", mmap_mode="r")
         exercise_embedding_shape = list(exercise_embeddings.shape)

@@ -37,6 +37,11 @@ class SemanticFeatureBundle:
     relation_type_ids: torch.Tensor
     relation_strengths: torch.Tensor
     exercise_entity_ids: torch.Tensor
+    exercise_text_token_ids: torch.Tensor
+    exercise_entity_to_text_index: torch.Tensor
+    relation_text_token_ids: torch.Tensor
+    shared_text_encoder_state: Dict[str, Any]
+    shared_text_encoder_config: Dict[str, Any]
     numeric_feature_slices: Dict[str, Tuple[int, int]]
     state_feature_slices: Dict[str, Tuple[int, int]]
     metadata: Dict[str, Any]
@@ -182,7 +187,7 @@ def _log_count(value: Any) -> float:
     return _clamp01(math.log1p(max(0.0, _as_float(value, 0.0))) / 10.0)
 
 
-def _load_text_embeddings(feature_dir: Path) -> tuple[Dict[str, np.ndarray], int, Dict[str, Any]]:
+def _load_text_embeddings(feature_dir: Path) -> tuple[Dict[str, np.ndarray], int, Dict[str, Any], Dict[str, Any]]:
     emb_dir = feature_dir / "text_embeddings"
     manifest_path = emb_dir / "text_embedding_manifest.json"
     if not manifest_path.exists():
@@ -207,17 +212,31 @@ def _load_text_embeddings(feature_dir: Path) -> tuple[Dict[str, np.ndarray], int
             f"Text embedding manifest must identify EKTM_mirt topic_v source: {manifest_path}. "
             "Expected model/source to contain EKTM or topic."
         )
-    concept_embeddings = np.load(emb_dir / manifest["files"]["concept_text_embeddings"])
-    exercise_embeddings = np.load(emb_dir / manifest["files"]["exercise_text_embeddings"])
+    files = manifest.get("files", {})
+    exercise_embeddings = np.load(emb_dir / files["exercise_text_embeddings"])
     text_by_entity: Dict[str, np.ndarray] = {}
-    for entity_id, emb in zip(manifest.get("concept_entity_ids", []), concept_embeddings):
-        text_by_entity[entity_id] = np.asarray(emb, dtype=np.float32)
     for entity_id, emb in zip(manifest.get("exercise_entity_ids", []), exercise_embeddings):
         text_by_entity[entity_id] = np.asarray(emb, dtype=np.float32)
     text_dim = int(manifest.get("embedding_dim") or 0)
     if text_dim <= 0 and text_by_entity:
         text_dim = int(next(iter(text_by_entity.values())).shape[0])
-    return text_by_entity, text_dim, manifest
+    required_dynamic = ["exercise_text_tokens", "relation_text_tokens", "shared_text_encoder", "shared_text_encoder_config"]
+    missing_dynamic = [name for name in required_dynamic if name not in files or not (emb_dir / files[name]).exists()]
+    if missing_dynamic:
+        raise FileNotFoundError(
+            "V-Fin7 requires shared EKTM_mirt text artifacts: " + ", ".join(missing_dynamic)
+        )
+    try:
+        encoder_state = torch.load(emb_dir / files["shared_text_encoder"], map_location="cpu", weights_only=True)
+    except TypeError:
+        encoder_state = torch.load(emb_dir / files["shared_text_encoder"], map_location="cpu")
+    artifacts = {
+        "exercise_tokens": np.load(emb_dir / files["exercise_text_tokens"]).astype(np.int64),
+        "relation_tokens": np.load(emb_dir / files["relation_text_tokens"]).astype(np.int64),
+        "encoder_state": encoder_state,
+        "encoder_config": read_json(emb_dir / files["shared_text_encoder_config"]),
+    }
+    return text_by_entity, text_dim, manifest, artifacts
 
 
 def _load_semantic_metadata(feature_dir: Path) -> Dict[str, Dict[str, Any]]:
@@ -352,7 +371,7 @@ def load_semantic_feature_bundle(
     id2entity = {idx: name for name, idx in entity2id.items()}
     id2relation = {idx: name for name, idx in relation2id.items()}
 
-    text_by_entity, text_dim, text_manifest = _load_text_embeddings(feature_dir_path)
+    text_by_entity, text_dim, text_manifest, text_artifacts = _load_text_embeddings(feature_dir_path)
     semantic_metadata = _load_semantic_metadata(feature_dir_path)
     entity_dir = feature_dir_path / "entity_features"
     irt_dir = feature_dir_path / "irt_features"
@@ -473,6 +492,12 @@ def load_semantic_feature_bundle(
     exercise_ids = sorted(
         entity_id for name, entity_id in entity2id.items() if entity_kind(name) == "ex"
     )
+    exercise_entity_to_text_index = np.full((nentity,), -1, dtype=np.int64)
+    for name, entity_id in entity2id.items():
+        if entity_kind(name) == "ex" and name[2:].isdigit():
+            index = int(name[2:])
+            if index < text_artifacts["exercise_tokens"].shape[0]:
+                exercise_entity_to_text_index[entity_id] = index
 
     return SemanticFeatureBundle(
         entity2id=entity2id,
@@ -488,6 +513,11 @@ def load_semantic_feature_bundle(
         relation_type_ids=torch.tensor(relation_type_array, dtype=torch.long, device=device),
         relation_strengths=torch.tensor(relation_strength_array, dtype=torch.float32, device=device),
         exercise_entity_ids=torch.tensor(exercise_ids, dtype=torch.long, device=device),
+        exercise_text_token_ids=torch.tensor(text_artifacts["exercise_tokens"], dtype=torch.long, device=device),
+        exercise_entity_to_text_index=torch.tensor(exercise_entity_to_text_index, dtype=torch.long, device=device),
+        relation_text_token_ids=torch.tensor(text_artifacts["relation_tokens"], dtype=torch.long, device=device),
+        shared_text_encoder_state=text_artifacts["encoder_state"],
+        shared_text_encoder_config=text_artifacts["encoder_config"],
         numeric_feature_slices=numeric_slices,
         state_feature_slices=state_slices,
         metadata={
