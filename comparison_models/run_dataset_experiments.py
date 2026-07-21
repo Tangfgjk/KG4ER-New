@@ -162,8 +162,24 @@ def validate_data_dir(data_dir):
     if missing:
         raise FileNotFoundError(f"Missing required files in {data_dir}: {missing}")
     relation_count = line_count(data_dir / "relations.dict")
-    if relation_count != 304:
-        raise ValueError(f"{data_dir}/relations.dict must contain 304 relations, got {relation_count}")
+    if relation_count not in {203, 304}:
+        raise ValueError(
+            f"{data_dir}/relations.dict must contain either 203 no-sequence relations "
+            f"or 304 legacy sequence relations, got {relation_count}"
+        )
+
+    relation_names = set()
+    with (data_dir / "relations.dict").open("r", encoding="utf-8") as fp:
+        for line in fp:
+            parts = line.strip().split("\t")
+            if len(parts) >= 2:
+                relation_names.add(parts[1])
+    if "rec" not in relation_names:
+        raise ValueError(f"{data_dir}/relations.dict must contain the recommendation relation 'rec'")
+    if not any(name.startswith("mlkc") for name in relation_names):
+        raise ValueError(f"{data_dir}/relations.dict must contain mastery relations with prefix 'mlkc'")
+    if not any(name.startswith("exfr") for name in relation_names):
+        raise ValueError(f"{data_dir}/relations.dict must contain forgetting relations with prefix 'exfr'")
 
 
 def sequence_interaction_file(data_dir):
