@@ -190,6 +190,48 @@ def sequence_interaction_file(data_dir):
     return None
 
 
+def resolve_raw_dir_for_graph(data_dir):
+    """Return the raw folder that was used to build this ER graph."""
+    manifest_names = [
+        "vfin_graph_manifest.json",
+        "er_graph_manifest.json",
+        "v11_graph_manifest.json",
+        "v10_graph_manifest.json",
+    ]
+    repo_root = CODE_DIR.parent
+    for manifest_name in manifest_names:
+        manifest_path = data_dir / manifest_name
+        if not manifest_path.exists():
+            continue
+        manifest = load_json(manifest_path, default={}) or {}
+        raw_value = manifest.get("raw_dir") or manifest.get("source_raw_dir")
+        raw_name = manifest.get("raw_name")
+        candidates = []
+        if raw_value:
+            raw_path = Path(raw_value)
+            if raw_path.is_absolute():
+                candidates.append(raw_path)
+            else:
+                candidates.extend([
+                    repo_root / raw_path,
+                    Path.cwd() / raw_path,
+                    data_dir.parent / raw_path.name,
+                ])
+        if raw_name:
+            candidates.append(data_dir.parent / raw_name)
+        for candidate in candidates:
+            if candidate.exists():
+                return candidate
+
+    compact_dir = data_dir.parent / "raw_compact"
+    if compact_dir.exists():
+        return compact_dir
+    raw_dir = data_dir.parent / "raw"
+    if raw_dir.exists():
+        return raw_dir
+    return None
+
+
 def load_status(batch_dir):
     return load_json(batch_dir / "status.json", default={"tasks": {}}) or {"tasks": {}}
 
@@ -408,7 +450,7 @@ def run_traditional_baselines(args, batch_dir, data_dir, selected):
     run_dir.mkdir(parents=True, exist_ok=True)
     methods = [method for method in TRADITIONAL_BASELINES if wanted(method, selected)]
     update_task(batch_dir, task_id, "running", run_dir=str(run_dir), experiment=task_id, methods=methods)
-    raw_dir = data_dir.parent / "raw"
+    raw_dir = resolve_raw_dir_for_graph(data_dir)
     sequence_file = sequence_interaction_file(data_dir)
     command = [
         sys.executable,
@@ -426,7 +468,7 @@ def run_traditional_baselines(args, batch_dir, data_dir, selected):
         "--timing-file",
         str(run_dir / "timing.json"),
     ]
-    if raw_dir.exists():
+    if raw_dir is not None:
         command.extend(["--raw-dir", str(raw_dir)])
     elif sequence_file is not None:
         command.extend(["--sequence-file", str(sequence_file)])
