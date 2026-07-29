@@ -79,6 +79,7 @@ def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Train raw-data multi-label next-concept LSTM and export stu2know_seq.json.")
     parser.add_argument("--dataset", required=True)
     parser.add_argument("--data-fin-root", type=Path, default=None)
+    parser.add_argument("--raw-name", default="raw")
     parser.add_argument("--epochs", type=int, default=30)
     parser.add_argument("--batch-size", type=int, default=32)
     parser.add_argument("--hidden-size", type=int, default=200)
@@ -161,7 +162,7 @@ def main() -> None:
     args = parse_args()
     set_seed(args.seed)
     root = data_fin_root(args.data_fin_root)
-    raw = load_raw_dataset(args.dataset, root)
+    raw = load_raw_dataset(args.dataset, root, args.raw_name)
     output = front_dir(args.dataset, root) / "sequence"
     output.mkdir(parents=True, exist_ok=True)
     checkpoint_path = output / "multilabel_next_concept_lstm.pt"

@@ -313,7 +313,7 @@ def main():
                         exfr_items,
                         args.gamma,
                         model_name=args.model,
-                        mlkc_count=len(mlkc_items),
+                        mlkc_count=len(cognitive_items),
                     )
                 )
         else:
@@ -344,6 +344,7 @@ def main():
             ),
             "candidate_type": "exercise_only",
             "cognitive_relations": ["mlkc", "exfr"],
+            "sequence_policy": "pkc is used in graph training and rec-edge construction, not manually re-added during KGE inference",
         },
         args.output_dir / "scoring_protocol.json",
     )

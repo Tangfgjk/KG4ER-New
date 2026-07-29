@@ -273,9 +273,10 @@ def relation_label(prefix: str, value: float) -> str:
     return f"{prefix}{max(0.0, min(1.0, float(value))):.2f}"
 
 
-def write_relations(path: Path) -> None:
+def write_relations(path: Path, include_sequence: bool = False) -> None:
     rows = ["rec"]
-    for prefix in ["mlkc", "exfr"]:
+    prefixes = ["mlkc", "pkc", "exfr"] if include_sequence else ["mlkc", "exfr"]
+    for prefix in prefixes:
         rows.extend(f"{prefix}{value / 100:.2f}" for value in range(101))
     path.parent.mkdir(parents=True, exist_ok=True)
     with path.open("w", encoding="utf-8") as fp:
