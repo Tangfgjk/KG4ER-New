@@ -42,7 +42,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--semantic-run-dir", type=Path, required=True)
     parser.add_argument("--seeds", default="2024,2025,2026")
     parser.add_argument("--selection-top-k", type=int, default=20)
-    parser.add_argument("--evidence-top-k", type=int, default=20)
+    parser.add_argument("--evidence-top-k", type=int, default=100)
     return parser.parse_args()
 
 

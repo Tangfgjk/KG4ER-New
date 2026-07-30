@@ -82,6 +82,10 @@ def command_train(
         str(args.learning_rate),
         "--negative-ratio",
         str(args.negative_ratio),
+        "--embedding-dim",
+        str(args.embedding_dim),
+        "--embedding-shape1",
+        str(args.embedding_shape1),
         "--seed",
         str(seed),
         "--cuda",
@@ -110,6 +114,10 @@ def command_test(args: argparse.Namespace, eval_graph_path: Path, seed_dir: Path
         args.dataset,
         "--save-path",
         str(seed_dir),
+        "--embedding-dim",
+        str(args.embedding_dim),
+        "--embedding-shape1",
+        str(args.embedding_shape1),
         "--cuda",
         args.cuda,
         "--ablation",
@@ -255,6 +263,8 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--bs", type=int, default=1024)
     parser.add_argument("--learning-rate", type=float, default=0.001)
     parser.add_argument("--negative-ratio", type=int, default=5)
+    parser.add_argument("--embedding-dim", type=int, default=1000)
+    parser.add_argument("--embedding-shape1", type=int, default=20)
     parser.add_argument("--cuda", default="auto")
     parser.add_argument("--deterministic", action="store_true")
     parser.add_argument("--resume", action="store_true")
@@ -313,6 +323,8 @@ def main() -> None:
             "bs": args.bs,
             "learning_rate": args.learning_rate,
             "negative_ratio": args.negative_ratio,
+            "embedding_dim": args.embedding_dim,
+            "embedding_shape1": args.embedding_shape1,
             "cuda": args.cuda,
             "deterministic": args.deterministic,
             "resume": args.resume,

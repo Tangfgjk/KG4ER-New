@@ -118,7 +118,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--data-dir", type=Path, required=True)
     parser.add_argument("--scores-file", type=Path, required=True)
     parser.add_argument("--output-dir", type=Path, required=True)
-    parser.add_argument("--top-k", type=int, default=20)
+    parser.add_argument("--top-k", type=int, default=100)
     parser.add_argument(
         "--students",
         default="",

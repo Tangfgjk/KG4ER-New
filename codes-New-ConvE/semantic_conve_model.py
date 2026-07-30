@@ -105,9 +105,9 @@ class SemanticConvE(nn.Module):
         relation_text_token_ids: Optional[torch.Tensor] = None,
         shared_text_encoder_state: Optional[dict[str, Any]] = None,
         shared_text_encoder_config: Optional[dict[str, Any]] = None,
-        embedding_dim: int = 200,
+        embedding_dim: int = 1000,
         embedding_shape1: int = 20,
-        hidden_size: int = 9728,
+        hidden_size: Optional[int] = None,
         input_drop: float = 0.2,
         hidden_drop: float = 0.2,
         feat_drop: float = 0.3,
@@ -159,10 +159,21 @@ class SemanticConvE(nn.Module):
         self.inp_drop = nn.Dropout(input_drop)
         self.hidden_drop = nn.Dropout(hidden_drop)
         self.feature_map_drop = nn.Dropout2d(feat_drop)
-        self.conv1 = nn.Conv2d(1, 32, (3, 3), 1, 0, bias=use_bias)
+        num_filters = 32
+        conv_kernel = (3, 3)
+        self.conv1 = nn.Conv2d(1, num_filters, conv_kernel, 1, 0, bias=use_bias)
         self.bn0 = nn.BatchNorm2d(1)
-        self.bn1 = nn.BatchNorm2d(32)
+        self.bn1 = nn.BatchNorm2d(num_filters)
         self.bn2 = nn.BatchNorm1d(embedding_dim)
+        if hidden_size is None:
+            conv_h = 2 * self.emb_dim1 - conv_kernel[0] + 1
+            conv_w = self.emb_dim2 - conv_kernel[1] + 1
+            if conv_h <= 0 or conv_w <= 0:
+                raise ValueError(
+                    "embedding_shape1 and embedding_dim produce an invalid ConvE feature map: "
+                    f"conv_h={conv_h}, conv_w={conv_w}"
+                )
+            hidden_size = num_filters * conv_h * conv_w
         self.fc = nn.Linear(hidden_size, embedding_dim)
         self.register_parameter("b", nn.Parameter(torch.zeros(nentity)))
 

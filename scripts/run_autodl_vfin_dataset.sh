@@ -2,10 +2,9 @@
 # Run V-Fin8 no-sequence experiments for one dataset on one AutoDL GPU.
 #
 # Examples:
-#   bash scripts/run_autodl_vfin_dataset.sh Eedi all
-#   bash scripts/run_autodl_vfin_dataset.sh XES3G5M-sub-small semantic
-#   bash scripts/run_autodl_vfin_dataset.sh XES3G5M-sub-small comparison --resume
-#   bash scripts/run_autodl_vfin_dataset.sh Eedi all --seeds 2024,2025,2026
+#   bash scripts/run_autodl_vfin_dataset.sh Eedi semantic
+#   bash scripts/run_autodl_vfin_dataset.sh XES3G5M-sub-small semantic --resume
+#   bash scripts/run_autodl_vfin_dataset.sh Eedi semantic --seeds 2024,2025,2026
 
 set -euo pipefail
 
@@ -19,7 +18,9 @@ shift
 MODE="all"
 RESUME=0
 SEEDS="2024,2025,2026"
-TOP_KS="5,10,15,20,25,30,35,40,45,50,55,60,65,70,75,80,85,90,95,100"
+TOP_KS="5,10,15,20,25,30,35,40,45,50"
+SEMANTIC_EMBEDDING_DIM="1000"
+SEMANTIC_EMBEDDING_SHAPE1="20"
 
 if [[ $# -gt 0 && "$1" != "--resume" && "$1" != "--seeds" ]]; then
   MODE="$1"
@@ -64,9 +65,9 @@ cd "$REPO_ROOT"
 export WANDB_MODE="${WANDB_MODE:-disabled}"
 ABLATIONS="id_only,feature_only,feature_only_relation_id,feature_only_learner_id,feature_only_exercise_id,feature_only_no_mastery,feature_only_no_forgetting"
 COMPARISON_MODELS="TransE,TransE-adv,RotatE,DistMult,ComplEx,EB-CF,SB-CF,CBF"
-SEMANTIC_RUN_ID="${DATASET}_vfin8_semantic_${SEED_COUNT}seeds"
+SEMANTIC_RUN_ID="${DATASET}_vfin8_semantic_1000dim_${SEED_COUNT}seeds"
 COMPARISON_RUN_ID="${DATASET}_vfin8_comparison_${SEED_COUNT}seeds"
-REPORT_DIR="runs/${DATASET}/${DATASET}_vfin8_report_${SEED_COUNT}seeds"
+REPORT_DIR="runs/${DATASET}/${DATASET}_vfin8_1000dim_report_${SEED_COUNT}seeds"
 
 mkdir -p logs
 LOG_FILE="logs/${DATASET}_vfin8_${MODE}_$(date +%Y%m%d_%H%M%S).log"
@@ -77,6 +78,7 @@ echo "dataset=$DATASET mode=$MODE"
 echo "seeds=$SEEDS top_ks=$TOP_KS"
 echo "All training uses triples.txt only; test_triples.txt is evaluation-only."
 echo "SemanticConvE ablations=$ABLATIONS"
+echo "SemanticConvE embedding_dim=$SEMANTIC_EMBEDDING_DIM embedding_shape1=$SEMANTIC_EMBEDDING_SHAPE1"
 echo "Comparison models=$COMPARISON_MODELS"
 python -c "import torch; print('torch=', torch.__version__); print('cuda=', torch.cuda.is_available()); print('gpu=', torch.cuda.get_device_name(0) if torch.cuda.is_available() else 'CPU')"
 
@@ -103,6 +105,8 @@ if [[ "$MODE" == "all" || "$MODE" == "semantic" ]]; then
     --bs 1024 \
     --learning-rate 0.001 \
     --negative-ratio 5 \
+    --embedding-dim "$SEMANTIC_EMBEDDING_DIM" \
+    --embedding-shape1 "$SEMANTIC_EMBEDDING_SHAPE1" \
     --top-ks "$TOP_KS" \
     --cuda auto \
     --exclude-test-triples \
@@ -122,7 +126,7 @@ if [[ "$MODE" == "all" || "$MODE" == "semantic" ]]; then
     --semantic-run-dir "runs/${DATASET}/${SEMANTIC_RUN_ID}" \
     --seeds "$SEEDS" \
     --selection-top-k 20 \
-    --evidence-top-k 20
+    --evidence-top-k 100
 fi
 
 if [[ "$MODE" == "all" || "$MODE" == "comparison" ]]; then
